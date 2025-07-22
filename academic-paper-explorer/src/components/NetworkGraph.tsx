@@ -253,6 +253,20 @@ const NetworkGraph: React.FC = () => {
     )
   }
 
+  // 处理空网络数据或错误数据
+  if (!networkData.nodes || networkData.nodes.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900">
+        <div className="text-center">
+          <p className="text-yellow-400">网络数据为空</p>
+          <p className="text-gray-400 text-sm mt-2">
+            该论文可能没有可用的引用关系数据
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="relative h-full bg-gray-900">
       {/* 网络画布 */}

@@ -29,21 +29,72 @@ export function useSearchPapers() {
 export function useFetchPaperNetwork() {
   return useMutation({
     mutationFn: async (params: { paper_id: string, depth?: number, max_nodes?: number }): Promise<NetworkData> => {
+      console.log('发起网络构建请求:', params)
+      
       const { data, error } = await supabase.functions.invoke('fetch-paper-network', {
         body: params
       })
       
+      console.log('Edge Function响应:', { data, error })
+      
       if (error) {
-        throw new Error(error.message || '网络构建失败')
+        // 尝试解析错误信息
+        let errorMessage = '网络构建失败'
+        
+        if (error.message) {
+          errorMessage = error.message
+        }
+        
+        // 如果有详细的错误代码，提供更具体的错误信息
+        if (typeof error === 'object' && error.code) {
+          switch (error.code) {
+            case 'PAPER_NOT_FOUND':
+              errorMessage = '找不到指定的论文，请检查论文ID是否正确'
+              break
+            case 'PAPER_FETCH_FAILED':
+              errorMessage = '无法从数据源获取论文信息，请稍后重试'
+              break
+            case 'SUPABASE_CONFIG_MISSING':
+              errorMessage = '服务配置错误，请联系管理员'
+              break
+            case 'NETWORK_BUILD_FAILED':
+              errorMessage = '网络构建过程中出现错误，请重试'
+              break
+            default:
+              errorMessage = error.message || '网络构建失败'
+          }
+        }
+        
+        throw new Error(errorMessage)
       }
       
-      return data.data
+      if (!data || !data.data) {
+        throw new Error('服务返回数据格式错误')
+      }
+      
+      // 如果有警告信息，记录下来
+      if (data.warning) {
+        console.warn('网络构建警告:', data.warning)
+      }
+      
+      return { 
+        ...data.data, 
+        _warning: data.warning // 将警告信息传递给成功回调
+      }
     },
     onError: (error: Error) => {
+      console.error('网络构建失败:', error)
       toast.error(error.message || '网络构建失败，请重试')
     },
-    onSuccess: (data) => {
-      toast.success(`网络构建完成，包含 ${data.nodes.length} 个节点`)
+    onSuccess: (data: any) => {
+      console.log('网络构建成功:', data)
+      
+      // 检查是否有警告信息
+      if (data._warning) {
+        toast.success(`网络构建完成 (${data._warning})，包含 ${data.nodes.length} 个节点`)
+      } else {
+        toast.success(`网络构建完成，包含 ${data.nodes.length} 个节点`)
+      }
     }
   })
 }
