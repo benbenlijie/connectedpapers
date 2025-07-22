@@ -12,10 +12,35 @@ Deno.serve(async (req) => {
     }
 
     try {
-        const { paper_id, depth = 1, max_nodes = 200 } = await req.json();
+        let requestBody;
+        try {
+            requestBody = await req.json();
+        } catch (parseError) {
+            console.error('JSON解析错误:', parseError);
+            return new Response(JSON.stringify({
+                error: {
+                    code: 'INVALID_JSON',
+                    message: '请求体格式错误，必须是有效的JSON'
+                }
+            }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        const { paper_id, depth = 1, max_nodes = 200 } = requestBody;
 
         if (!paper_id) {
-            throw new Error('论文ID不能为空');
+            console.error('缺少论文ID');
+            return new Response(JSON.stringify({
+                error: {
+                    code: 'MISSING_PAPER_ID',
+                    message: '论文ID不能为空'
+                }
+            }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
         }
 
         console.log('开始构建论文网络:', { paper_id, depth, max_nodes });
@@ -25,42 +50,152 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
+        console.log('环境变量检查:', {
+            hasApiKey: !!semanticScholarApiKey,
+            hasSupabaseUrl: !!supabaseUrl,
+            hasServiceRoleKey: !!serviceRoleKey,
+            supabaseUrlValue: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : 'undefined'
+        });
+
         if (!supabaseUrl || !serviceRoleKey) {
-            throw new Error('Supabase配置缺失');
+            console.error('Supabase配置缺失:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!serviceRoleKey });
+            return new Response(JSON.stringify({
+                error: {
+                    code: 'SUPABASE_CONFIG_MISSING',
+                    message: 'Supabase配置缺失，请检查环境变量'
+                }
+            }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
         }
 
         // 生成查询哈希，用于缓存
         const queryHash = await generateQueryHash(paper_id, depth, max_nodes);
 
         // 检查缓存
-        const cachedNetwork = await getCachedNetwork(queryHash, supabaseUrl, serviceRoleKey);
-        if (cachedNetwork) {
-            console.log('返回缓存的网络数据');
+        try {
+            const cachedNetwork = await getCachedNetwork(queryHash, supabaseUrl, serviceRoleKey);
+            if (cachedNetwork) {
+                console.log('返回缓存的网络数据');
+                return new Response(JSON.stringify({
+                    data: cachedNetwork,
+                    cached: true
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+        } catch (cacheError) {
+            console.warn('缓存检查失败，继续构建网络:', cacheError.message);
+        }
+
+        // 获取根论文信息
+        let rootPaper;
+        try {
+            rootPaper = await fetchPaperDetails(paper_id, semanticScholarApiKey);
+        } catch (fetchError) {
+            console.error('获取论文详情失败:', fetchError);
+            
+            // 如果是OpenAlex ID，尝试通过DOI查找
+            if (paper_id.includes('openalex.org')) {
+                console.log('检测到OpenAlex ID，尝试通过其他方式查找...');
+                try {
+                    const openAlexPaper = await fetchFromOpenAlex(paper_id);
+                    if (openAlexPaper && openAlexPaper.doi) {
+                        console.log('从OpenAlex获取到DOI，重新尝试:', openAlexPaper.doi);
+                        rootPaper = await fetchPaperDetails(openAlexPaper.doi, semanticScholarApiKey);
+                    }
+                } catch (openAlexError) {
+                    console.warn('OpenAlex备用查询也失败:', openAlexError.message);
+                }
+            }
+            
+            if (!rootPaper) {
+                return new Response(JSON.stringify({
+                    error: {
+                        code: 'PAPER_FETCH_FAILED',
+                        message: `无法获取论文详情: ${fetchError.message}`
+                    }
+                }), {
+                    status: 404,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+        }
+
+        if (!rootPaper) {
+            console.error('找不到指定的论文:', paper_id);
+            
+            // 如果无法从Semantic Scholar获取数据，创建一个基础的单节点网络
+            console.log('创建基础网络作为备用方案');
+            const basicNetworkData = {
+                nodes: [{
+                    id: paper_id,
+                    label: '所选论文',
+                    title: '所选论文',
+                    abstract: '无法获取详细信息',
+                    year: new Date().getFullYear(),
+                    citationCount: 0,
+                    authors: '未知',
+                    venue: '未知',
+                    url: '',
+                    pdfUrl: '',
+                    fieldsOfStudy: [],
+                    isRoot: true,
+                    pageRankScore: 1.0,
+                    clusterId: 0,
+                    size: 25,
+                    color: '#ff6b35'
+                }],
+                edges: []
+            };
+            
             return new Response(JSON.stringify({
-                data: cachedNetwork,
-                cached: true
+                data: basicNetworkData,
+                cached: false,
+                warning: '无法获取论文的引用网络，仅显示单个节点'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
         }
 
-        // 获取根论文信息
-        const rootPaper = await fetchPaperDetails(paper_id, semanticScholarApiKey);
-        if (!rootPaper) {
-            throw new Error('找不到指定的论文');
+        // 构建论文网络
+        let networkData;
+        try {
+            networkData = await buildPaperNetwork(rootPaper, depth, max_nodes, semanticScholarApiKey);
+        } catch (buildError) {
+            console.error('构建网络失败:', buildError);
+            return new Response(JSON.stringify({
+                error: {
+                    code: 'NETWORK_BUILD_FAILED',
+                    message: `网络构建失败: ${buildError.message}`
+                }
+            }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
         }
 
-        // 构建论文网络
-        const networkData = await buildPaperNetwork(rootPaper, depth, max_nodes, semanticScholarApiKey);
-
         // 计算PageRank
-        calculatePageRank(networkData.nodes, networkData.edges);
+        try {
+            calculatePageRank(networkData.nodes, networkData.edges);
+        } catch (pageRankError) {
+            console.warn('PageRank计算失败:', pageRankError.message);
+        }
 
         // 计算社区结构（简化的Louvain算法）
-        calculateCommunities(networkData.nodes, networkData.edges);
+        try {
+            calculateCommunities(networkData.nodes, networkData.edges);
+        } catch (communityError) {
+            console.warn('社区检测失败:', communityError.message);
+        }
 
         // 缓存结果
-        await cacheNetworkData(queryHash, rootPaper.paperId, networkData, supabaseUrl, serviceRoleKey);
+        try {
+            await cacheNetworkData(queryHash, rootPaper.paperId, networkData, supabaseUrl, serviceRoleKey);
+        } catch (cacheError) {
+            console.warn('缓存网络数据失败:', cacheError.message);
+        }
 
         console.log(`网络构建完成，包含 ${networkData.nodes.length} 个节点和 ${networkData.edges.length} 条边`);
 
@@ -76,8 +211,9 @@ Deno.serve(async (req) => {
 
         const errorResponse = {
             error: {
-                code: 'NETWORK_BUILD_FAILED',
-                message: error.message
+                code: 'INTERNAL_SERVER_ERROR',
+                message: error.message || '服务器内部错误',
+                details: error.stack ? error.stack.split('\n').slice(0, 5) : undefined
             }
         };
 
@@ -143,6 +279,27 @@ async function cacheNetworkData(queryHash, rootPaperId, networkData, supabaseUrl
     }
 }
 
+// 从OpenAlex获取论文信息
+async function fetchFromOpenAlex(openAlexId) {
+    try {
+        const response = await fetch(openAlexId, {
+            headers: {
+                'User-Agent': 'Academic-Paper-Explorer/1.0 (mailto:researcher@example.com)'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAlex API请求失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('OpenAlex查询失败:', error);
+        throw error;
+    }
+}
+
 // 获取论文详情
 async function fetchPaperDetails(paperId, apiKey) {
     const headers = {
@@ -153,20 +310,67 @@ async function fetchPaperDetails(paperId, apiKey) {
         headers['x-api-key'] = apiKey;
     }
 
-    try {
-        const response = await fetch(`https://api.semanticscholar.org/graph/v1/paper/${paperId}?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references,citations`, {
-            headers
-        });
+    // 清理和验证论文ID
+    const cleanPaperId = String(paperId).trim();
+    console.log('尝试获取论文详情:', cleanPaperId);
 
-        if (!response.ok) {
-            console.warn(`获取论文详情失败: ${paperId}`, response.status);
-            return null;
+    try {
+        // 构建API URL
+        let apiUrl;
+        if (cleanPaperId.startsWith('10.')) {
+            // DOI格式
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(cleanPaperId)}`;
+        } else if (cleanPaperId.includes('arxiv')) {
+            // arXiv格式
+            const arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+        } else {
+            // 假设是Semantic Scholar ID或其他格式
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
         }
 
-        return await response.json();
+        apiUrl += '?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references,citations';
+
+        console.log('API请求URL:', apiUrl);
+
+        const response = await fetch(apiUrl, {
+            headers,
+            signal: AbortSignal.timeout(15000) // 15秒超时
+        });
+
+        console.log('API响应状态:', response.status, response.statusText);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`获取论文详情失败: ${cleanPaperId}`, {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorText
+            });
+            
+            if (response.status === 404) {
+                throw new Error(`论文未找到: ${cleanPaperId}`);
+            } else if (response.status === 429) {
+                throw new Error('API请求过于频繁，请稍后重试');
+            } else if (response.status >= 500) {
+                throw new Error('Semantic Scholar服务暂时不可用');
+            } else {
+                throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+            }
+        }
+
+        const data = await response.json();
+        console.log('成功获取论文数据:', {
+            paperId: data.paperId,
+            title: data.title?.substring(0, 50) + '...',
+            referencesCount: data.references?.length || 0,
+            citationsCount: data.citations?.length || 0
+        });
+
+        return data;
     } catch (error) {
-        console.warn(`获取论文详情错误: ${paperId}`, error.message);
-        return null;
+        console.error(`获取论文详情错误: ${cleanPaperId}`, error);
+        throw error;
     }
 }
 

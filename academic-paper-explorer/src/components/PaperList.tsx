@@ -60,7 +60,32 @@ const PaperList: React.FC = () => {
     // 获取论文网络
     setIsLoadingNetwork(true)
     try {
-      const paperId = paper.semantic_scholar_id || paper.openalex_id || paper.id
+      // 优先使用semantic_scholar_id，如果没有则使用DOI，最后才使用其他ID
+      let paperId;
+      if (paper.semantic_scholar_id) {
+        paperId = paper.semantic_scholar_id;
+        console.log('使用Semantic Scholar ID');
+      } else if (paper.doi) {
+        paperId = paper.doi;
+        console.log('使用DOI');
+      } else if (paper.openalex_id) {
+        paperId = paper.openalex_id;
+        console.log('使用OpenAlex ID');
+      } else {
+        paperId = paper.id;
+        console.log('使用默认ID');
+      }
+      
+      if (!paperId) {
+        throw new Error('论文缺少有效的ID，无法构建网络图')
+      }
+      
+      console.log('选中论文:', {
+        title: paper.title,
+        paperId,
+        source: paper.source
+      })
+      
       const networkData = await networkMutation.mutateAsync({
         paper_id: paperId,
         depth: 1,
@@ -69,6 +94,7 @@ const PaperList: React.FC = () => {
       setNetworkData(networkData)
     } catch (error) {
       console.error('获取网络数据失败:', error)
+      // 错误已经在useApiQueries中通过toast显示，这里不需要重复处理
     } finally {
       setIsLoadingNetwork(false)
     }
