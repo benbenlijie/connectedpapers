@@ -109,16 +109,54 @@ async function fetchComprehensivePaperDetails(paperId, apiKey, contactEmail) {
                 const arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
                 apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
             } else if (cleanPaperId.includes('openalex.org')) {
-                // OpenAlex ID - 尝试直接从OpenAlex获取DOI
-                console.log('检测到OpenAlex ID，尝试获取DOI...');
-                const openAlexPaper = await fetchFromOpenAlex(cleanPaperId, contactEmail);
-                if (openAlexPaper && openAlexPaper.doi) {
-                    const doi = openAlexPaper.doi.replace('https://doi.org/', '');
-                    apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
-                    console.log('从OpenAlex获取到DOI:', doi);
+                // OpenAlex ID - 转换为正确的API URL格式
+                console.log('检测到OpenAlex ID，转换为API URL...');
+                let openAlexApiUrl;
+                
+                // 如果是完整的OpenAlex URL，提取ID部分
+                if (cleanPaperId.startsWith('https://openalex.org/')) {
+                    const workId = cleanPaperId.replace('https://openalex.org/', '');
+                    openAlexApiUrl = `https://api.openalex.org/works/${workId}`;
+                } else if (cleanPaperId.startsWith('W')) {
+                    // 如果是纯ID（以W开头）
+                    openAlexApiUrl = `https://api.openalex.org/works/${cleanPaperId}`;
                 } else {
-                    throw new Error('无法从OpenAlex ID获取DOI信息');
+                    // 尝试作为完整URL处理
+                    openAlexApiUrl = cleanPaperId.replace('openalex.org/', 'api.openalex.org/works/');
                 }
+                
+                console.log('OpenAlex API URL:', openAlexApiUrl);
+                
+                                 try {
+                     const openAlexPaper = await fetchFromOpenAlex(openAlexApiUrl, contactEmail);
+                     if (openAlexPaper && openAlexPaper.doi) {
+                         const doi = openAlexPaper.doi.replace('https://doi.org/', '');
+                         apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
+                         console.log('从OpenAlex获取到DOI:', doi);
+                     } else if (openAlexPaper && openAlexPaper.title) {
+                         // 如果没有DOI但有标题，尝试通过标题搜索
+                         console.log('没有DOI，尝试通过标题搜索...');
+                         const searchTitle = encodeURIComponent(openAlexPaper.title.substring(0, 100));
+                         apiUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${searchTitle}&limit=1`;
+                     } else {
+                         throw new Error('无法从OpenAlex获取有效的论文信息');
+                     }
+                 } catch (openAlexError) {
+                     console.error('OpenAlex API调用失败:', openAlexError.message);
+                     // 如果OpenAlex失败，尝试提取可能的ID并直接搜索Semantic Scholar
+                     console.log('尝试从OpenAlex URL提取ID并直接搜索Semantic Scholar...');
+                     
+                     // 尝试提取OpenAlex work ID（通常以W开头）
+                     const workIdMatch = cleanPaperId.match(/W\d+/);
+                     if (workIdMatch) {
+                         apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${workIdMatch[0]}`;
+                         console.log('使用提取的Work ID:', workIdMatch[0]);
+                     } else {
+                         // 最后的回退：使用原始清理后的ID
+                         apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
+                         console.log('使用原始清理后的ID进行搜索');
+                     }
+                 }
             } else {
                 // 假设是Semantic Scholar ID
                 apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
@@ -176,7 +214,21 @@ async function fetchComprehensivePaperDetails(paperId, apiKey, contactEmail) {
                 }
             }
 
-            const semanticData = await response.json();
+            let semanticData = await response.json();
+            
+            // 如果使用了搜索API，提取第一个结果
+            if (semanticData.data && Array.isArray(semanticData.data) && semanticData.data.length > 0) {
+                console.log('从搜索结果中获取第一个匹配项');
+                semanticData = semanticData.data[0];
+            } else if (semanticData.data && Array.isArray(semanticData.data) && semanticData.data.length === 0) {
+                throw new Error('搜索未找到匹配的论文');
+            }
+            
+            // 验证响应数据的完整性
+            if (!semanticData || !semanticData.paperId) {
+                throw new Error('API响应缺少必要的论文ID信息');
+            }
+            
             console.log('成功获取论文数据:', {
                 paperId: semanticData.paperId,
                 title: semanticData.title?.substring(0, 50) + '...',
@@ -215,20 +267,48 @@ async function fetchComprehensivePaperDetails(paperId, apiKey, contactEmail) {
 }
 
 // 从OpenAlex获取论文信息 - 改进版本
-async function fetchFromOpenAlex(openAlexId, contactEmail) {
+async function fetchFromOpenAlex(openAlexApiUrl, contactEmail) {
     try {
-        const response = await fetch(openAlexId, {
+        console.log('正在请求OpenAlex API:', openAlexApiUrl);
+        
+        const response = await fetch(openAlexApiUrl, {
             headers: {
-                'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${contactEmail})`
+                'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${contactEmail})`,
+                'Accept': 'application/json'
             },
             signal: AbortSignal.timeout(10000) // 10秒超时
         });
 
+        console.log('OpenAlex API响应状态:', response.status, response.statusText);
+
         if (!response.ok) {
-            throw new Error(`OpenAlex API请求失败: ${response.status}`);
+            const errorText = await response.text();
+            console.error('OpenAlex API错误响应:', {
+                status: response.status,
+                statusText: response.statusText,
+                body: errorText.substring(0, 200) + '...'
+            });
+            throw new Error(`OpenAlex API请求失败: ${response.status} ${response.statusText}`);
+        }
+
+        // 检查响应的Content-Type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const responseText = await response.text();
+            console.error('OpenAlex返回非JSON响应:', {
+                contentType,
+                body: responseText.substring(0, 200) + '...'
+            });
+            throw new Error(`OpenAlex返回了非JSON响应: ${contentType}`);
         }
 
         const data = await response.json();
+        console.log('成功获取OpenAlex数据:', {
+            id: data.id,
+            title: data.title?.substring(0, 50) + '...',
+            doi: data.doi
+        });
+        
         return data;
     } catch (error) {
         console.error('OpenAlex查询失败:', error);
