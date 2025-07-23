@@ -148,6 +148,8 @@ const supabaseAnonKey = 'your_anon_public_key'
    - Output Directory: `academic-paper-explorer/dist`
    - Install Command: `cd academic-paper-explorer && pnpm install`
    - Node.js Version: `18.x`
+   
+   **注意**: 项目已配置 `packageManager` 字段和 `.nvmrc` 文件，Vercel 会自动使用正确的版本。
 
 3. **部署**:
    点击"Deploy"，Vercel将自动构建和部署
@@ -232,14 +234,25 @@ jobs:
 
 ### 1. 构建失败
 
+**问题**: pnpm版本不兼容 (`ERR_INVALID_THIS` 错误)
+**解决**: 
+- 项目已配置 `packageManager: "pnpm@9.15.0"` 字段
+- 添加了 `.nvmrc` 文件指定 Node.js 18
+- 如仍有问题，可在 Vercel 项目设置中强制指定 Node.js 版本为 18.x
+
+**问题**: 锁文件兼容性警告
+**解决**: 重新生成 pnpm-lock.yaml:
+```bash
+cd academic-paper-explorer
+rm pnpm-lock.yaml
+pnpm install
+```
+
 **问题**: Node.js版本不兼容
 **解决**: 确保使用Node.js 18+
 
 **问题**: pnpm命令未找到
-**解决**: 在构建命令前添加pnpm安装:
-```bash
-npm install -g pnpm && cd academic-paper-explorer && pnpm install && pnpm build
-```
+**解决**: 项目已配置 packageManager 字段，Vercel 会自动安装正确版本
 
 ### 2. Edge Functions错误
 
