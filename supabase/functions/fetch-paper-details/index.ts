@@ -81,19 +81,38 @@ async function fetchComprehensivePaperDetails(paperId, apiKey) {
     }
 
     try {
-        // 从Semantic Scholar获取详细信息
-        const response = await fetch(`https://api.semanticscholar.org/graph/v1/paper/${paperId}?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references.paperId,references.title,references.year,references.citationCount,citations.paperId,citations.title,citations.year,citations.citationCount,influentialCitationCount,publicationTypes,journal,publicationVenue`, {
-            headers
+        // 根据输入的论文ID构建正确的 Semantic Scholar API URL，支持 DOI、arXiv ID 以及 Semantic Scholar 内部 ID
+        const cleanPaperId = String(paperId).trim();
+        let apiUrl;
+
+        if (cleanPaperId.startsWith('10.')) {
+            // DOI 格式
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(cleanPaperId)}`;
+        } else if (/^arxiv[:]?/i.test(cleanPaperId) || cleanPaperId.toLowerCase().includes('arxiv')) {
+            // arXiv 格式，去掉前缀后使用 ARXIV:${id}
+            const arxivId = cleanPaperId.replace(/^arxiv[:]?/i, '').replace(/^ARXIV[:]?/i, '');
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+        } else {
+            // 默认假设是 Semantic Scholar paperId
+            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
+        }
+
+        apiUrl += '?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references.paperId,references.title,references.year,references.citationCount,citations.paperId,citations.title,citations.year,citations.citationCount,influentialCitationCount,publicationTypes,journal,publicationVenue';
+
+        // 从 Semantic Scholar 获取详细信息
+        const response = await fetch(apiUrl, {
+            headers,
+            signal: AbortSignal.timeout(15000) // 15 秒超时，避免长时间挂起
         });
 
         if (!response.ok) {
-            console.warn(`Semantic Scholar查询失败: ${paperId}`, response.status);
+            console.warn(`Semantic Scholar 查询失败: ${paperId}`, response.status);
             return null;
         }
 
         const semanticData = await response.json();
 
-        // 尝试获取DOI并从OpenAlex获取额外信息
+        // 尝试获取 DOI 并从 OpenAlex 获取额外信息
         let openAlexData = null;
         const doi = extractDOI(semanticData.url);
         if (doi) {
