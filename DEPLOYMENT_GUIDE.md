@@ -349,3 +349,40 @@ jobs:
 ---
 
 🎯 **提示**: 推荐先使用默认配置的Supabase实例进行快速部署，熟悉流程后再考虑自定义配置。
+
+### Edge Functions环境变量配置
+
+为了避免API速率限制和403错误，强烈建议配置以下环境变量：
+
+#### 必需环境变量
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+#### 推荐环境变量
+```bash
+# Semantic Scholar API密钥 - 强烈推荐配置以避免速率限制
+SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key
+
+# 联系邮箱 - 用于API请求的用户代理
+CONTACT_EMAIL=your_email@example.com
+```
+
+#### 如何获取Semantic Scholar API密钥
+
+1. 访问 [Semantic Scholar API页面](https://www.semanticscholar.org/product/api)
+2. 点击 "Request an API key"
+3. 填写申请表单，说明你的使用目的
+4. 等待审核通过，你会收到API密钥邮件
+5. 在Supabase控制台的Edge Functions设置中添加 `SEMANTIC_SCHOLAR_API_KEY` 环境变量
+
+#### 配置环境变量
+
+1. 登录Supabase控制台
+2. 进入你的项目
+3. 点击左侧菜单的 "Edge Functions"
+4. 点击 "Settings" 或 "Environment Variables"
+5. 添加上述环境变量
+
+**注意**: 配置API密钥后，API速率限制将从每秒1000次请求（所有未认证用户共享）提升到每秒1次请求（个人限制）。虽然个人限制较低，但不会受到其他用户的影响，通常能提供更稳定的服务。
