@@ -1,109 +1,144 @@
-# 网络图生成错误修复指南
+# 网络图生成错误修复指南 (更新版)
 
 ## 问题描述
 在选择一篇论文来生成网络图的时候，会弹出"Edge Function returned a non-2xx status code"错误。
 
 ## 根本原因分析
-经过分析，发现该错误主要由以下几个原因造成：
+经过深入分析，发现该错误主要由以下原因造成：
 
-1. **环境变量缺失**：Edge Function需要正确配置的环境变量
-2. **论文ID格式不兼容**：不同数据源的论文ID格式不统一
-3. **API限制**：Semantic Scholar API的访问限制
-4. **错误处理不完善**：缺乏详细的错误信息和备用方案
+### 主要原因：Semantic Scholar API速率限制
+1. **未配置API密钥**：Edge Function在没有API密钥的情况下受到严格的速率限制
+2. **共享速率限制**：所有未认证用户共享每秒1000次请求的限制
+3. **403 Forbidden错误**：当超过速率限制时，API返回403错误
 
-## 修复方案
+### 次要原因
+1. **论文ID格式不兼容**：不同数据源的论文ID格式不统一
+2. **错误处理不完善**：缺乏详细的错误信息和备用方案
+3. **网络超时**：API请求超时导致的错误
 
-### 1. 改进的错误处理 (`supabase/functions/fetch-paper-network/index.ts`)
+## 立即解决方案
 
-- **详细的错误分类**：将不同类型的错误分类处理，提供具体的错误信息
-- **环境变量检查**：在函数开始时检查所有必需的环境变量
-- **多层容错机制**：添加缓存检查、API调用、数据构建等各个环节的异常处理
+### 方法1：配置Semantic Scholar API密钥（推荐）
 
-```typescript
-// 新增的错误代码:
-- INVALID_JSON: JSON解析错误
-- MISSING_PAPER_ID: 缺少论文ID
-- SUPABASE_CONFIG_MISSING: Supabase配置缺失
-- PAPER_FETCH_FAILED: 论文获取失败
-- PAPER_NOT_FOUND: 论文未找到
-- NETWORK_BUILD_FAILED: 网络构建失败
-```
+#### 步骤1：申请API密钥
+1. 访问 [Semantic Scholar API页面](https://www.semanticscholar.org/product/api)
+2. 点击 "Request an API key"
+3. 填写申请表单，说明使用目的（学术研究、论文分析等）
+4. 等待审核通过（通常1-3个工作日）
+5. 收到包含API密钥的邮件
 
-### 2. 论文ID兼容性改进
+#### 步骤2：在Supabase中配置环境变量
+1. 登录 [Supabase控制台](https://supabase.com/dashboard)
+2. 选择你的项目：`zvwdpwexvldxwpiumbss`
+3. 点击左侧菜单的 "Edge Functions"
+4. 点击 "Settings" 或 "Environment Variables"
+5. 添加以下环境变量：
+   ```
+   SEMANTIC_SCHOLAR_API_KEY=你的API密钥
+   CONTACT_EMAIL=你的邮箱地址
+   ```
+6. 保存配置
 
-- **智能ID识别**：自动识别DOI、arXiv ID、Semantic Scholar ID等不同格式
-- **优先级策略**：优先使用Semantic Scholar ID，其次DOI，最后其他ID
-- **OpenAlex备用查询**：当直接查询失败时，尝试通过OpenAlex获取DOI再查询
+#### 步骤3：重新部署Edge Functions
+配置环境变量后，Edge Functions会自动重新启动并应用新配置。
 
-### 3. 前端用户体验改进 (`academic-paper-explorer/src/`)
+### 方法2：临时解决方案
+如果无法立即获取API密钥，可以尝试以下方法：
 
-- **详细的日志记录**：添加详细的控制台日志以便调试
-- **用户友好的错误提示**：根据错误类型显示具体的解决建议
-- **备用网络显示**：当无法获取完整网络时，显示单节点基础网络
+1. **等待片刻重试**：遇到错误后等待1-2分钟再尝试
+2. **选择不同论文**：某些论文的API请求更容易成功
+3. **避免高峰时段**：在非高峰时段使用应用
 
-### 4. 新增功能
+## 技术改进（已实施）
 
-- **基础网络备用方案**：当API调用完全失败时，创建包含单个节点的基础网络
-- **警告信息显示**：在成功但有限制的情况下显示警告信息
-- **环境变量模板**：提供`.env.example`文件说明所需的环境变量
+### 1. 改进的错误处理
+- **详细的错误分类**：区分不同类型的API错误
+- **重试机制**：自动重试失败的API请求
+- **指数退避**：智能的重试延迟策略
+- **用户友好的错误消息**：提供具体的解决建议
 
-## 部署和配置
+### 2. API请求优化
+- **智能ID识别**：自动识别DOI、arXiv ID、Semantic Scholar ID等格式
+- **请求限流**：在API调用之间添加适当延迟
+- **超时处理**：设置合理的请求超时时间
+- **多数据源支持**：支持从OpenAlex获取DOI信息
 
-### 必需的环境变量
+### 3. 前端体验改进
+- **详细的错误提示**：根据错误类型显示具体建议
+- **加载状态优化**：更清晰的加载和错误状态显示
+- **备用网络显示**：当API完全失败时显示单节点网络
 
-在Supabase项目中需要配置以下环境变量：
+## 验证修复效果
 
-```bash
-# 可选但推荐，用于提高API访问限制
-SEMANTIC_SCHOLAR_API_KEY=your_api_key_here
+### 成功指标
+1. **错误频率降低**：403错误的发生频率显著减少
+2. **响应时间改善**：API响应更加稳定
+3. **用户体验提升**：错误消息更加友好和有用
 
-# 必需，Supabase项目配置
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# 可选，用于API请求的联系邮箱
-CONTACT_EMAIL=your-email@example.com
-```
-
-### 验证修复效果
-
-1. **检查Edge Function日志**：在Supabase控制台查看函数执行日志
-2. **前端控制台**：打开浏览器开发者工具查看详细的错误信息
-3. **测试不同论文源**：尝试选择来自不同数据源的论文（Semantic Scholar、OpenAlex、CrossRef）
+### 测试步骤
+1. 搜索论文并选择一篇论文
+2. 点击论文卡片生成网络图
+3. 观察是否出现403错误
+4. 如果出现错误，检查错误消息是否提供了有用的指导
 
 ## 常见问题解决
 
-### Q1: 仍然看到"non-2xx status code"错误
+### Q1: 仍然看到"Edge Function returned a non-2xx status code"错误
 **解决方案**：
-1. 检查Supabase Edge Function的环境变量配置
-2. 查看Edge Function执行日志以获取具体错误信息
-3. 确认Semantic Scholar API访问正常
+1. 检查是否已正确配置`SEMANTIC_SCHOLAR_API_KEY`环境变量
+2. 等待1-2分钟后重试
+3. 尝试选择不同的论文
+4. 查看浏览器控制台获取更详细的错误信息
 
-### Q2: 网络图只显示单个节点
+### Q2: API密钥申请被拒绝
 **解决方案**：
-1. 这可能是正常的备用方案，说明该论文在Semantic Scholar中没有引用数据
-2. 尝试选择被引用次数更高的论文
-3. 检查是否是OpenAlex论文，系统会尝试通过DOI查找
+1. 在申请时详细说明学术研究用途
+2. 提供机构邮箱地址
+3. 说明预期的使用频率和规模
+4. 可以尝试重新申请并提供更多详细信息
 
-### Q3: 某些论文无法生成网络图
+### Q3: 配置环境变量后仍有错误
 **解决方案**：
-1. 确认论文ID格式正确
-2. 对于OpenAlex论文，确保有DOI信息
-3. 尝试使用论文的DOI而不是其他ID格式
+1. 确认环境变量名拼写正确：`SEMANTIC_SCHOLAR_API_KEY`
+2. 检查API密钥是否包含额外的空格或字符
+3. 等待几分钟让配置生效
+4. 在Supabase控制台查看Edge Function日志
 
-## 技术细节
+### Q4: 某些论文无法生成网络图
+**解决方案**：
+1. 确认论文在Semantic Scholar中存在
+2. 尝试使用论文的DOI而不是其他ID格式
+3. 对于OpenAlex论文，确保有DOI信息
+4. 检查论文是否有引用和被引用数据
 
-### 修改的文件列表
-1. `supabase/functions/fetch-paper-network/index.ts` - 主要错误处理改进
-2. `academic-paper-explorer/src/hooks/useApiQueries.ts` - 前端API调用改进
-3. `academic-paper-explorer/src/components/PaperList.tsx` - 论文选择逻辑改进
-4. `academic-paper-explorer/src/components/NetworkGraph.tsx` - 网络图显示改进
+## 监控和维护
 
-### 新增的功能特性
-- 多格式论文ID支持
-- 智能错误分类和处理
-- 备用网络构建方案
-- 详细的调试日志
-- 环境变量验证
+### 日志查看
+1. 登录Supabase控制台
+2. 进入Edge Functions页面
+3. 点击相应的函数查看日志
+4. 查找错误信息和性能指标
 
-这些修复应该显著减少"Edge Function returned a non-2xx status code"错误的发生，并在错误确实发生时提供更好的用户体验和调试信息。
+### 性能监控
+- 监控API响应时间
+- 跟踪错误率变化
+- 观察用户反馈
+
+## 预防措施
+
+### 最佳实践
+1. **定期检查API配额**：监控API使用情况
+2. **保持环境变量更新**：确保API密钥有效
+3. **用户教育**：告知用户可能的等待时间
+4. **备用方案**：为API失败提供降级体验
+
+### 长期改进
+1. **实现本地缓存**：减少重复API调用
+2. **添加API使用统计**：监控和优化使用模式
+3. **考虑API替代方案**：减少对单一API的依赖
+
+## 总结
+
+通过配置Semantic Scholar API密钥，可以显著减少"Edge Function returned a non-2xx status code"错误的发生。虽然个人API密钥有每秒1次请求的限制，但这比共享的未认证访问更加可靠和可预测。
+
+如果无法立即获取API密钥，请耐心等待并在非高峰时段重试。改进的错误处理机制会提供更清晰的指导信息。
