@@ -88,7 +88,7 @@ const PaperList: React.FC = () => {
       
       const networkData = await networkMutation.mutateAsync({
         paper_id: paperId,
-        depth: 1,
+        depth: 3,
         max_nodes: 200
       })
       setNetworkData(networkData)

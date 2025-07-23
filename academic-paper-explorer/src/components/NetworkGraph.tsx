@@ -332,8 +332,16 @@ const NetworkGraph: React.FC = () => {
             <span>根论文</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <span>相关论文</span>
+            <div className="w-3 h-3 bg-emerald-600 rounded-full"></div>
+            <span>第一层</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-violet-600 rounded-full"></div>
+            <span>第二层</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+            <span>第三层</span>
           </div>
           <div className="flex items-center space-x-2">
             <div className="w-4 h-0.5 bg-green-400"></div>
