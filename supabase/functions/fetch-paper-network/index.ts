@@ -663,7 +663,7 @@ async function fetchPaperDetails(paperId, apiKey) {
     }
 }
 
-// 构建论文网络
+// 构建论文网络 - 支持多层递归扩展
 async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     const nodes = new Map();
     const edges = [];
@@ -671,9 +671,9 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     const papersToProcess = [{ paper: rootPaper, currentDepth: 0 }];
     let apiCallCount = 0;
 
-    console.log('开始构建论文网络:', {
+    console.log('开始构建多层论文网络:', {
         rootPaper: rootPaper.title?.substring(0, 50) + '...',
-        depth,
+        targetDepth: depth,
         maxNodes,
         hasReferences: !!rootPaper.references?.length,
         referenceCount: rootPaper.references?.length || 0,
@@ -688,21 +688,29 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     while (papersToProcess.length > 0 && nodes.size < maxNodes) {
         const { paper, currentDepth } = papersToProcess.shift();
 
-        console.log(`处理论文 (深度 ${currentDepth}):`, {
+        console.log(`处理论文 (深度 ${currentDepth}/${depth}):`, {
             title: paper.title?.substring(0, 50) + '...',
+            nodeCount: nodes.size,
+            queueLength: papersToProcess.length,
             referencesCount: paper.references?.length || 0,
             citationsCount: paper.citations?.length || 0
         });
 
         if (currentDepth >= depth) {
-            console.log('达到最大深度，跳过');
+            console.log('达到最大深度，跳过当前论文的扩展');
             continue;
         }
 
-        // 处理引用的论文（出度）
+        // 根据深度调整扩展策略
+        const referencesLimit = getReferencesLimit(currentDepth, depth);
+        const citationsLimit = getCitationsLimit(currentDepth, depth);
+
+        console.log(`深度 ${currentDepth} 的扩展限制: 引用=${referencesLimit}, 被引用=${citationsLimit}`);
+
+        // 处理引用的论文（出度）- 所有深度都处理引用
         if (paper.references && paper.references.length > 0) {
-            console.log(`处理 ${paper.references.length} 个引用论文`);
-            const limitedReferences = paper.references.slice(0, 15); // 限制引用数量以控制网络大小
+            console.log(`处理 ${Math.min(paper.references.length, referencesLimit)} 个引用论文 (总共${paper.references.length}个)`);
+            const limitedReferences = paper.references.slice(0, referencesLimit);
             
             for (const ref of limitedReferences) {
                 if (nodes.size >= maxNodes) {
@@ -710,65 +718,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                     break;
                 }
                 
-                if (!visitedPapers.has(ref.paperId)) {
-                    try {
-                        console.log(`获取引用论文详情: ${ref.paperId}`);
-                        const refPaper = await fetchPaperDetails(ref.paperId, apiKey);
-                        apiCallCount++;
-                        
-                        if (refPaper) {
-                            addNodeToNetwork(nodes, refPaper, false);
-                            visitedPapers.add(ref.paperId);
-                            console.log(`成功添加引用论文: ${refPaper.title?.substring(0, 30)}...`);
-                            
-                            if (currentDepth + 1 < depth) {
-                                papersToProcess.push({ paper: refPaper, currentDepth: currentDepth + 1 });
-                            }
-
-                            // 添加边（引用关系）
-                            edges.push({
-                                from: paper.paperId,
-                                to: ref.paperId,
-                                type: 'reference',
-                                weight: 1
-                            });
-                        }
-                    } catch (refError) {
-                        console.warn(`获取引用论文失败: ${ref.paperId}`, refError.message);
-                        // 即使获取失败，也可以添加基础边信息
-                        if (ref.paperId && ref.title) {
-                            console.log(`添加基础引用论文节点: ${ref.title}`);
-                            const basicRefNode = {
-                                id: ref.paperId,
-                                label: ref.title || '未知论文',
-                                title: ref.title,
-                                abstract: '',
-                                year: ref.year || null,
-                                citationCount: 0,
-                                authors: ref.authors?.map(a => a.name).join(', ') || '',
-                                venue: ref.venue || '',
-                                url: '',
-                                pdfUrl: '',
-                                fieldsOfStudy: [],
-                                isRoot: false,
-                                pageRankScore: 0.0,
-                                clusterId: 0,
-                                size: 15,
-                                color: '#94a3b8' // 灰色表示数据不完整
-                            };
-                            nodes.set(ref.paperId, basicRefNode);
-                            visitedPapers.add(ref.paperId);
-
-                            edges.push({
-                                from: paper.paperId,
-                                to: ref.paperId,
-                                type: 'reference',
-                                weight: 1
-                            });
-                        }
-                    }
-                } else {
-                    // 如果论文已访问，仍然添加边
+                // 添加边（即使节点已存在）
+                if (!edges.some(e => e.from === paper.paperId && e.to === ref.paperId && e.type === 'reference')) {
                     edges.push({
                         from: paper.paperId,
                         to: ref.paperId,
@@ -777,17 +728,45 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                     });
                 }
                 
-                // 严格控制API调用间隔，确保1秒1次
-                const delay = apiKey ? 1000 : 1500; // 有API密钥1秒，无密钥1.5秒
-                console.log(`等待 ${delay}ms 以避免API速率限制...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
+                if (!visitedPapers.has(ref.paperId)) {
+                    try {
+                        console.log(`获取引用论文详情 (深度 ${currentDepth}): ${ref.paperId}`);
+                        const refPaper = await fetchPaperDetails(ref.paperId, apiKey);
+                        apiCallCount++;
+                        
+                        if (refPaper) {
+                            addNodeToNetwork(nodes, refPaper, false, currentDepth + 1);
+                            visitedPapers.add(ref.paperId);
+                            console.log(`成功添加引用论文: ${refPaper.title?.substring(0, 30)}...`);
+                            
+                            // 如果还没达到最大深度，继续递归处理这个论文
+                            if (currentDepth + 1 < depth) {
+                                papersToProcess.push({ paper: refPaper, currentDepth: currentDepth + 1 });
+                                console.log(`将论文加入队列继续扩展 (深度 ${currentDepth + 1}): ${refPaper.title?.substring(0, 30)}...`);
+                            }
+                        }
+                    } catch (refError) {
+                        console.warn(`获取引用论文失败: ${ref.paperId}`, refError.message);
+                        // 即使获取失败，也可以添加基础节点
+                        if (ref.paperId && ref.title) {
+                            console.log(`添加基础引用论文节点: ${ref.title}`);
+                            const basicRefNode = createBasicNode(ref, false, currentDepth + 1);
+                            nodes.set(ref.paperId, basicRefNode);
+                            visitedPapers.add(ref.paperId);
+                        }
+                    }
+                    
+                    // 严格控制API调用间隔
+                    const delay = apiKey ? 1000 : 1500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
         }
 
-        // 处理被引用的论文（入度）- 限制数量以平衡网络
-        if (paper.citations && paper.citations.length > 0 && currentDepth === 0) { // 只处理根论文的被引用
-            console.log(`处理 ${paper.citations.length} 个被引用论文`);
-            const limitedCitations = paper.citations.slice(0, 10); // 限制被引用数量
+        // 处理被引用的论文（入度）- 根据深度决定是否处理
+        if (paper.citations && paper.citations.length > 0 && citationsLimit > 0) {
+            console.log(`处理 ${Math.min(paper.citations.length, citationsLimit)} 个被引用论文 (总共${paper.citations.length}个)`);
+            const limitedCitations = paper.citations.slice(0, citationsLimit);
             
             for (const cite of limitedCitations) {
                 if (nodes.size >= maxNodes) {
@@ -795,63 +774,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                     break;
                 }
                 
-                if (!visitedPapers.has(cite.paperId)) {
-                    try {
-                        console.log(`获取被引用论文详情: ${cite.paperId}`);
-                        const citePaper = await fetchPaperDetails(cite.paperId, apiKey);
-                        apiCallCount++;
-                        
-                        if (citePaper) {
-                            addNodeToNetwork(nodes, citePaper, false);
-                            visitedPapers.add(cite.paperId);
-                            console.log(`成功添加被引用论文: ${citePaper.title?.substring(0, 30)}...`);
-                            
-                            // 被引用论文通常不继续扩展，避免网络过大
-                            
-                            // 添加边（被引用关系）
-                            edges.push({
-                                from: cite.paperId,
-                                to: paper.paperId,
-                                type: 'citation',
-                                weight: 1
-                            });
-                        }
-                    } catch (citeError) {
-                        console.warn(`获取被引用论文失败: ${cite.paperId}`, citeError.message);
-                        // 即使获取失败，也可以添加基础边信息
-                        if (cite.paperId && cite.title) {
-                            console.log(`添加基础被引用论文节点: ${cite.title}`);
-                            const basicCiteNode = {
-                                id: cite.paperId,
-                                label: cite.title || '未知论文',
-                                title: cite.title,
-                                abstract: '',
-                                year: cite.year || null,
-                                citationCount: 0,
-                                authors: cite.authors?.map(a => a.name).join(', ') || '',
-                                venue: cite.venue || '',
-                                url: '',
-                                pdfUrl: '',
-                                fieldsOfStudy: [],
-                                isRoot: false,
-                                pageRankScore: 0.0,
-                                clusterId: 0,
-                                size: 15,
-                                color: '#94a3b8' // 灰色表示数据不完整
-                            };
-                            nodes.set(cite.paperId, basicCiteNode);
-                            visitedPapers.add(cite.paperId);
-
-                            edges.push({
-                                from: cite.paperId,
-                                to: paper.paperId,
-                                type: 'citation',
-                                weight: 1
-                            });
-                        }
-                    }
-                } else {
-                    // 如果论文已访问，仍然添加边
+                // 添加边（即使节点已存在）
+                if (!edges.some(e => e.from === cite.paperId && e.to === paper.paperId && e.type === 'citation')) {
                     edges.push({
                         from: cite.paperId,
                         to: paper.paperId,
@@ -860,15 +784,46 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                     });
                 }
                 
-                // 严格控制API调用间隔
-                const delay = apiKey ? 1000 : 1500;
-                console.log(`等待 ${delay}ms 以避免API速率限制...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
+                if (!visitedPapers.has(cite.paperId)) {
+                    try {
+                        console.log(`获取被引用论文详情 (深度 ${currentDepth}): ${cite.paperId}`);
+                        const citePaper = await fetchPaperDetails(cite.paperId, apiKey);
+                        apiCallCount++;
+                        
+                        if (citePaper) {
+                            addNodeToNetwork(nodes, citePaper, false, currentDepth + 1);
+                            visitedPapers.add(cite.paperId);
+                            console.log(`成功添加被引用论文: ${citePaper.title?.substring(0, 30)}...`);
+                            
+                            // 被引用论文也可以继续递归扩展，但通常限制更严
+                            if (currentDepth + 1 < depth && currentDepth < 2) { // 被引用论文只扩展2层
+                                papersToProcess.push({ paper: citePaper, currentDepth: currentDepth + 1 });
+                                console.log(`将被引用论文加入队列继续扩展 (深度 ${currentDepth + 1}): ${citePaper.title?.substring(0, 30)}...`);
+                            }
+                        }
+                    } catch (citeError) {
+                        console.warn(`获取被引用论文失败: ${cite.paperId}`, citeError.message);
+                        // 即使获取失败，也可以添加基础节点
+                        if (cite.paperId && cite.title) {
+                            console.log(`添加基础被引用论文节点: ${cite.title}`);
+                            const basicCiteNode = createBasicNode(cite, false, currentDepth + 1);
+                            nodes.set(cite.paperId, basicCiteNode);
+                            visitedPapers.add(cite.paperId);
+                        }
+                    }
+                    
+                    // 严格控制API调用间隔
+                    const delay = apiKey ? 1000 : 1500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
         }
+
+        console.log(`完成深度 ${currentDepth} 的处理，当前网络规模: ${nodes.size} 节点, ${edges.length} 边`);
     }
 
-    console.log(`网络构建完成: ${nodes.size} 个节点, ${edges.length} 条边, ${apiCallCount} 次API调用`);
+    console.log(`多层网络构建完成: ${nodes.size} 个节点, ${edges.length} 条边, ${apiCallCount} 次API调用`);
+    console.log('网络层次分布:', getDepthDistribution(nodes));
 
     return {
         nodes: Array.from(nodes.values()),
@@ -876,9 +831,75 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     };
 }
 
+// 根据深度获取引用论文的数量限制
+function getReferencesLimit(currentDepth, maxDepth) {
+    switch (currentDepth) {
+        case 0: return 20; // 根节点：更多引用
+        case 1: return 15; // 第一层：中等数量
+        case 2: return 10; // 第二层：较少数量
+        default: return 5; // 更深层：最少数量
+    }
+}
+
+// 根据深度获取被引用论文的数量限制
+function getCitationsLimit(currentDepth, maxDepth) {
+    switch (currentDepth) {
+        case 0: return 15; // 根节点：处理被引用
+        case 1: return 8;  // 第一层：少量被引用
+        case 2: return 3;  // 第二层：极少被引用
+        default: return 0; // 更深层：不处理被引用
+    }
+}
+
+// 创建基础节点（当无法获取完整信息时）
+function createBasicNode(paperRef, isRoot = false, depth = 0) {
+    return {
+        id: paperRef.paperId,
+        label: paperRef.title || '未知论文',
+        title: paperRef.title,
+        abstract: '',
+        year: paperRef.year || null,
+        citationCount: paperRef.citationCount || 0,
+        authors: paperRef.authors?.map(a => a.name).join(', ') || '',
+        venue: paperRef.venue || '',
+        url: paperRef.url || '',
+        pdfUrl: '',
+        fieldsOfStudy: [],
+        isRoot: isRoot,
+        depth: depth,
+        pageRankScore: 0.0,
+        clusterId: 0,
+        size: 15,
+        color: '#94a3b8' // 灰色表示数据不完整
+    };
+}
+
+// 获取网络的深度分布统计
+function getDepthDistribution(nodes) {
+    const distribution = {};
+    nodes.forEach(node => {
+        const depth = node.isRoot ? 0 : (node.depth || 'unknown');
+        distribution[depth] = (distribution[depth] || 0) + 1;
+    });
+    return distribution;
+}
+
 // 添加节点到网络
-function addNodeToNetwork(nodes, paper, isRoot = false) {
+function addNodeToNetwork(nodes, paper, isRoot = false, depth = 0) {
     if (nodes.has(paper.paperId)) return;
+    
+    // 根据深度选择不同的颜色
+    let color = '#1e3a8a'; // 默认蓝色
+    if (isRoot) {
+        color = '#ff6b35'; // 橙色：根节点
+    } else {
+        switch (depth) {
+            case 1: color = '#059669'; break; // 绿色：第一层
+            case 2: color = '#7c3aed'; break; // 紫色：第二层
+            case 3: color = '#dc2626'; break; // 红色：第三层
+            default: color = '#6b7280'; break; // 灰色：更深层
+        }
+    }
     
     const node = {
         id: paper.paperId,
@@ -893,10 +914,11 @@ function addNodeToNetwork(nodes, paper, isRoot = false) {
         pdfUrl: paper.openAccessPdf?.url,
         fieldsOfStudy: paper.fieldsOfStudy || [],
         isRoot: isRoot,
+        depth: depth, // 添加深度信息
         pageRankScore: 0.0,
         clusterId: 0,
-        size: Math.max(10, Math.log10((paper.citationCount || 0) + 1) * 10), // 基于引用数的节点大小
-        color: isRoot ? '#ff6b35' : '#1e3a8a' // 根节点为橙色，其他为蓝色
+        size: Math.max(15, Math.log10((paper.citationCount || 0) + 1) * 12), // 基于引用数的节点大小
+        color: color
     };
     
     nodes.set(paper.paperId, node);
