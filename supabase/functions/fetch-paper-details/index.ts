@@ -101,20 +101,56 @@ async function fetchComprehensivePaperDetails(paperId, apiKey, contactEmail) {
             let apiUrl;
             
             // 智能识别不同的论文ID格式
-            if (cleanPaperId.startsWith('10.')) {
-                // DOI格式
+            // 检查是否是arXiv DOI格式
+            if (cleanPaperId.includes('doi.org') && cleanPaperId.includes('arxiv')) {
+                // 从DOI URL中提取arXiv ID
+                const arxivMatch = cleanPaperId.match(/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)/i);
+                if (arxivMatch) {
+                    const arxivId = arxivMatch[1];
+                    apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+                    console.log('从arXiv DOI提取ID:', arxivId);
+                } else {
+                    // 尝试另一种格式匹配
+                    const altArxivMatch = cleanPaperId.match(/10\.48550\/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)/i);
+                    if (altArxivMatch) {
+                        const arxivId = altArxivMatch[1];
+                        apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+                        console.log('从arXiv DOI (alt格式)提取ID:', arxivId);
+                    } else {
+                        throw new Error(`无法从arXiv DOI中提取有效的arXiv ID: ${cleanPaperId}`);
+                    }
+                }
+            } else if (cleanPaperId.startsWith('10.')) {
+                // 普通DOI格式
                 apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(cleanPaperId)}`;
-            } else if (cleanPaperId.toLowerCase().includes('arxiv')) {
-                // arXiv格式
-                const arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
-                apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+            } else if (cleanPaperId.toLowerCase().includes('arxiv') || /^\d{4}\.\d{4,5}(?:v\d+)?$/.test(cleanPaperId)) {
+                // arXiv格式 (arxiv:xxxx.xxxx 或直接的 xxxx.xxxx)
+                let arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
+                // 确保ID格式正确
+                if (/^\d{4}\.\d{4,5}(?:v\d+)?$/.test(arxivId)) {
+                    apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+                } else {
+                    throw new Error(`无效的arXiv ID格式: ${arxivId}`);
+                }
             } else if (cleanPaperId.includes('openalex.org')) {
                 // OpenAlex ID - 尝试直接从OpenAlex获取DOI
                 console.log('检测到OpenAlex ID，尝试获取DOI...');
                 const openAlexPaper = await fetchFromOpenAlex(cleanPaperId, contactEmail);
                 if (openAlexPaper && openAlexPaper.doi) {
                     const doi = openAlexPaper.doi.replace('https://doi.org/', '');
-                    apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
+                    // 检查是否是arXiv DOI
+                    if (doi.includes('arxiv')) {
+                        const arxivMatch = doi.match(/10\.48550\/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)/i);
+                        if (arxivMatch) {
+                            const arxivId = arxivMatch[1];
+                            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+                            console.log('从OpenAlex DOI提取arXiv ID:', arxivId);
+                        } else {
+                            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
+                        }
+                    } else {
+                        apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
+                    }
                     console.log('从OpenAlex获取到DOI:', doi);
                 } else {
                     throw new Error('无法从OpenAlex ID获取DOI信息');
@@ -200,6 +236,32 @@ async function fetchComprehensivePaperDetails(paperId, apiKey, contactEmail) {
 
         } catch (error) {
             console.error(`获取论文详情错误 (第${attempt + 1}次):`, error.message);
+            
+            // 如果是arXiv论文且Semantic Scholar失败，尝试直接从arXiv API获取
+            if (cleanPaperId.includes('arxiv') || /^\d{4}\.\d{4,5}(?:v\d+)?$/.test(cleanPaperId)) {
+                console.log('尝试arXiv API作为备用方案...');
+                try {
+                    let arxivId = cleanPaperId;
+                    // 从DOI中提取arXiv ID
+                    if (cleanPaperId.includes('doi.org') && cleanPaperId.includes('arxiv')) {
+                        const arxivMatch = cleanPaperId.match(/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)/i) || 
+                                         cleanPaperId.match(/10\.48550\/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)/i);
+                        if (arxivMatch) {
+                            arxivId = arxivMatch[1];
+                        }
+                    } else if (cleanPaperId.toLowerCase().includes('arxiv')) {
+                        arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
+                    }
+                    
+                    const arxivPaper = await fetchFromArxivAPI(arxivId);
+                    if (arxivPaper) {
+                        console.log('成功从arXiv API获取论文信息');
+                        return arxivPaper;
+                    }
+                } catch (arxivError) {
+                    console.warn('arXiv API备用方案也失败:', arxivError.message);
+                }
+            }
             
             // 如果是最后一次尝试，抛出错误
             if (attempt === maxRetries - 1) {
@@ -454,4 +516,80 @@ function extractDOI(url) {
     if (!url) return null;
     const doiMatch = url.match(/10\.\d{4,}[\w\d\(\)\.\-\/:]+/i);
     return doiMatch ? doiMatch[0] : null;
+}
+
+// 从arXiv API直接获取论文信息（备用方案）
+async function fetchFromArxivAPI(arxivId) {
+    try {
+        console.log('尝试从arXiv API获取论文信息:', arxivId);
+        
+        // 移除可能的版本号 (如 v1, v2 等)
+        const baseArxivId = arxivId.replace(/v\d+$/, '');
+        
+        const response = await fetch(`http://export.arxiv.org/api/query?id_list=${baseArxivId}`, {
+            headers: {
+                'User-Agent': 'Academic-Paper-Explorer/1.0 (research tool)'
+            },
+            signal: AbortSignal.timeout(10000) // 10秒超时
+        });
+
+        if (!response.ok) {
+            throw new Error(`arXiv API请求失败: ${response.status}`);
+        }
+
+        const xmlText = await response.text();
+        
+        // 简单的XML解析来提取论文信息
+        const titleMatch = xmlText.match(/<title>(.+?)<\/title>/s);
+        const summaryMatch = xmlText.match(/<summary>(.+?)<\/summary>/s);
+        const publishedMatch = xmlText.match(/<published>(.+?)<\/published>/);
+        const authorsMatch = xmlText.match(/<name>(.+?)<\/name>/g);
+        
+        if (!titleMatch) {
+            throw new Error('无法从arXiv API解析论文信息');
+        }
+
+        const title = titleMatch[1].trim();
+        const summary = summaryMatch ? summaryMatch[1].replace(/\s+/g, ' ').trim() : '';
+        const publishedDate = publishedMatch ? publishedMatch[1] : '';
+        const year = publishedDate ? new Date(publishedDate).getFullYear() : new Date().getFullYear();
+        
+        const authors = authorsMatch ? 
+            authorsMatch.map(match => {
+                const nameMatch = match.match(/<name>(.+?)<\/name>/);
+                return nameMatch ? { name: nameMatch[1].trim() } : null;
+            }).filter(Boolean) : [];
+
+        // 转换为详细格式
+        return {
+            id: `ARXIV:${arxivId}`,
+            semantic_scholar_id: `ARXIV:${arxivId}`,
+            title: title,
+            abstract: summary,
+            year: year,
+            publication_date: publishedDate,
+            authors: authors.map(a => ({
+                id: null,
+                name: a.name,
+                url: null,
+                affiliations: []
+            })),
+            venue: 'arXiv preprint',
+            journal: 'arXiv',
+            publication_venue: null,
+            publication_types: ['preprint'],
+            citation_count: 0,
+            influential_citation_count: 0,
+            reference_count: 0,
+            fields_of_study: ['Computer Science'],
+            url: `https://arxiv.org/abs/${baseArxivId}`,
+            pdf_url: `https://arxiv.org/pdf/${baseArxivId}.pdf`,
+            doi: null,
+            references: [],
+            citations: []
+        };
+    } catch (error) {
+        console.error('arXiv API查询失败:', error.message);
+        throw error;
+    }
 }
