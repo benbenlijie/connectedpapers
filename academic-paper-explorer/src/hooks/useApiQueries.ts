@@ -52,7 +52,7 @@ export function useFetchPaperNetwork() {
               errorMessage = '找不到指定的论文，请检查论文ID是否正确'
               break
             case 'PAPER_FETCH_FAILED':
-              errorMessage = '无法从数据源获取论文信息，请稍后重试'
+              errorMessage = '无法从数据源获取论文信息，可能是API速率限制，请稍后重试'
               break
             case 'SUPABASE_CONFIG_MISSING':
               errorMessage = '服务配置错误，请联系管理员'
@@ -60,9 +60,27 @@ export function useFetchPaperNetwork() {
             case 'NETWORK_BUILD_FAILED':
               errorMessage = '网络构建过程中出现错误，请重试'
               break
+            case 'INVALID_JSON':
+              errorMessage = '请求格式错误，请重试'
+              break
+            case 'MISSING_PAPER_ID':
+              errorMessage = '论文ID缺失，请选择有效的论文'
+              break
+            case 'INTERNAL_SERVER_ERROR':
+              errorMessage = '服务器内部错误，请稍后重试'
+              break
             default:
-              errorMessage = error.message || '网络构建失败'
+              // 检查是否包含403错误信息
+              if (error.message && error.message.includes('403')) {
+                errorMessage = 'API访问受限，这可能是由于速率限制。请稍等片刻后重试，或联系管理员配置API密钥'
+              } else if (error.message && error.message.includes('429')) {
+                errorMessage = 'API请求过于频繁，请稍等片刻后重试'
+              } else {
+                errorMessage = error.message || '网络构建失败，请重试'
+              }
           }
+        } else if (error.message && error.message.includes('Edge Function returned a non-2xx status code')) {
+          errorMessage = 'API服务暂时不可用，这可能是由于速率限制。请稍等片刻后重试'
         }
         
         throw new Error(errorMessage)

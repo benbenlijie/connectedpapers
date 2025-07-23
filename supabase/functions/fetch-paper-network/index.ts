@@ -49,13 +49,20 @@ Deno.serve(async (req) => {
         const semanticScholarApiKey = Deno.env.get('SEMANTIC_SCHOLAR_API_KEY');
         const supabaseUrl = Deno.env.get('SUPABASE_URL');
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        const contactEmail = Deno.env.get('CONTACT_EMAIL') || 'researcher@example.com';
 
         console.log('环境变量检查:', {
             hasApiKey: !!semanticScholarApiKey,
             hasSupabaseUrl: !!supabaseUrl,
             hasServiceRoleKey: !!serviceRoleKey,
+            contactEmail: contactEmail,
             supabaseUrlValue: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : 'undefined'
         });
+
+        // 如果没有API密钥，发出警告但继续执行
+        if (!semanticScholarApiKey) {
+            console.warn('警告: 未配置SEMANTIC_SCHOLAR_API_KEY，可能遇到API速率限制');
+        }
 
         if (!supabaseUrl || !serviceRoleKey) {
             console.error('Supabase配置缺失:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!serviceRoleKey });
@@ -300,77 +307,134 @@ async function fetchFromOpenAlex(openAlexId) {
     }
 }
 
-// 获取论文详情
+// 获取论文详情 - 改进版本，包含重试逻辑和更好的错误处理
 async function fetchPaperDetails(paperId, apiKey) {
-    const headers = {
-        'User-Agent': 'Academic-Paper-Explorer/1.0'
-    };
-    
-    if (apiKey) {
-        headers['x-api-key'] = apiKey;
-    }
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1秒基础延迟
+    const contactEmail = Deno.env.get('CONTACT_EMAIL') || 'researcher@example.com';
 
-    // 清理和验证论文ID
-    const cleanPaperId = String(paperId).trim();
-    console.log('尝试获取论文详情:', cleanPaperId);
-
-    try {
-        // 构建API URL
-        let apiUrl;
-        if (cleanPaperId.startsWith('10.')) {
-            // DOI格式
-            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(cleanPaperId)}`;
-        } else if (cleanPaperId.includes('arxiv')) {
-            // arXiv格式
-            const arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
-            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
-        } else {
-            // 假设是Semantic Scholar ID或其他格式
-            apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
-        }
-
-        apiUrl += '?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references,citations';
-
-        console.log('API请求URL:', apiUrl);
-
-        const response = await fetch(apiUrl, {
-            headers,
-            signal: AbortSignal.timeout(15000) // 15秒超时
-        });
-
-        console.log('API响应状态:', response.status, response.statusText);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`获取论文详情失败: ${cleanPaperId}`, {
-                status: response.status,
-                statusText: response.statusText,
-                error: errorText
-            });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const headers = {
+                'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${contactEmail})`
+            };
             
-            if (response.status === 404) {
-                throw new Error(`论文未找到: ${cleanPaperId}`);
-            } else if (response.status === 429) {
-                throw new Error('API请求过于频繁，请稍后重试');
-            } else if (response.status >= 500) {
-                throw new Error('Semantic Scholar服务暂时不可用');
+            if (apiKey) {
+                headers['x-api-key'] = apiKey;
+                console.log(`使用API密钥进行请求 (第${attempt + 1}次)`);
             } else {
-                throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+                console.log(`警告: 未配置API密钥，可能遇到速率限制 (第${attempt + 1}次)`);
             }
+
+            // 清理和验证论文ID
+            const cleanPaperId = String(paperId).trim();
+            console.log(`尝试获取论文详情 (第${attempt + 1}次):`, cleanPaperId);
+
+            // 智能识别不同的论文ID格式
+            let apiUrl;
+            if (cleanPaperId.startsWith('10.')) {
+                // DOI格式
+                apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(cleanPaperId)}`;
+            } else if (cleanPaperId.toLowerCase().includes('arxiv')) {
+                // arXiv格式
+                const arxivId = cleanPaperId.replace(/^arxiv:?/i, '');
+                apiUrl = `https://api.semanticscholar.org/graph/v1/paper/ARXIV:${arxivId}`;
+            } else if (cleanPaperId.includes('openalex.org')) {
+                // OpenAlex ID - 尝试直接从OpenAlex获取DOI
+                console.log('检测到OpenAlex ID，尝试获取DOI...');
+                try {
+                    const openAlexPaper = await fetchFromOpenAlex(cleanPaperId);
+                    if (openAlexPaper && openAlexPaper.doi) {
+                        const doi = openAlexPaper.doi.replace('https://doi.org/', '');
+                        apiUrl = `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}`;
+                        console.log('从OpenAlex获取到DOI:', doi);
+                    } else {
+                        throw new Error('无法从OpenAlex ID获取DOI信息');
+                    }
+                } catch (openAlexError) {
+                    console.warn('OpenAlex查询失败:', openAlexError.message);
+                    // 继续尝试使用原始ID
+                    apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
+                }
+            } else {
+                // 假设是Semantic Scholar ID或其他格式
+                apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${cleanPaperId}`;
+            }
+
+            apiUrl += '?fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,references,citations';
+
+            console.log(`API请求URL (第${attempt + 1}次):`, apiUrl);
+
+            const response = await fetch(apiUrl, {
+                headers,
+                signal: AbortSignal.timeout(15000) // 15秒超时
+            });
+
+            console.log(`API响应状态 (第${attempt + 1}次):`, response.status, response.statusText);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`获取论文详情失败 (第${attempt + 1}次): ${cleanPaperId}`, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorText
+                });
+                
+                if (response.status === 404) {
+                    throw new Error(`论文未找到: ${cleanPaperId}`);
+                } else if (response.status === 429) {
+                    // 速率限制 - 使用指数退避重试
+                    if (attempt < maxRetries - 1) {
+                        const delay = baseDelay * Math.pow(2, attempt);
+                        console.log(`遇到速率限制，等待 ${delay}ms 后重试...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw new Error('API请求过于频繁，请稍后重试');
+                } else if (response.status === 403) {
+                    // 禁止访问 - 可能需要API密钥
+                    if (!apiKey && attempt < maxRetries - 1) {
+                        console.log('遇到403错误，可能需要API密钥，稍后重试...');
+                        await new Promise(resolve => setTimeout(resolve, baseDelay * (attempt + 1)));
+                        continue;
+                    }
+                    throw new Error('API访问被禁止，请检查API密钥配置或稍后重试');
+                } else if (response.status >= 500) {
+                    // 服务器错误 - 重试
+                    if (attempt < maxRetries - 1) {
+                        const delay = baseDelay * (attempt + 1);
+                        console.log(`服务器错误，等待 ${delay}ms 后重试...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw new Error('Semantic Scholar服务暂时不可用');
+                } else {
+                    throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+                }
+            }
+
+            const data = await response.json();
+            console.log(`成功获取论文数据 (第${attempt + 1}次):`, {
+                paperId: data.paperId,
+                title: data.title?.substring(0, 50) + '...',
+                referencesCount: data.references?.length || 0,
+                citationsCount: data.citations?.length || 0
+            });
+
+            return data;
+        } catch (error) {
+            console.error(`获取论文详情错误 (第${attempt + 1}次): ${paperId}`, error.message);
+            
+            // 如果是最后一次尝试，抛出错误
+            if (attempt === maxRetries - 1) {
+                throw error;
+            }
+            
+            // 等待后重试
+            const delay = baseDelay * (attempt + 1);
+            console.log(`等待 ${delay}ms 后重试...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
-
-        const data = await response.json();
-        console.log('成功获取论文数据:', {
-            paperId: data.paperId,
-            title: data.title?.substring(0, 50) + '...',
-            referencesCount: data.references?.length || 0,
-            citationsCount: data.citations?.length || 0
-        });
-
-        return data;
-    } catch (error) {
-        console.error(`获取论文详情错误: ${cleanPaperId}`, error);
-        throw error;
     }
 }
 
@@ -448,8 +512,10 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
             }
         }
 
-        // 添加小延迟避免过快请求
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // 添加延迟避免过快请求和速率限制
+        // 如果没有API密钥，使用更长的延迟
+        const delay = semanticScholarApiKey ? 200 : 500;
+        await new Promise(resolve => setTimeout(resolve, delay));
     }
 
     return {

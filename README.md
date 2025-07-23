@@ -216,10 +216,11 @@ pnpm build
 
 ### 常见问题
 
-1. **"Edge Function returned a non-2xx status code"错误**
-   - 检查Supabase Edge Functions是否正确部署
-   - 验证环境变量是否正确设置
-   - 查看Supabase函数日志获取详细错误信息
+1. **"Loading failed - Edge Function returned a non-2xx status code"错误**
+   - **原因**：Semantic Scholar API速率限制导致的403错误
+   - **立即解决**：等待1-2分钟后重试，或选择其他论文
+   - **长期解决**：申请并配置Semantic Scholar API密钥
+   - **详细指南**：参见 [网络图修复指南](NETWORK_GRAPH_FIX.md)
 
 2. **论文搜索无结果**
    - 检查网络连接
