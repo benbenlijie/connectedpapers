@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
             });
         }
 
-        const { paper_id, depth = 1, max_nodes = 200 } = requestBody;
+        const { paper_id, depth = 1, max_nodes = 100 } = requestBody;
 
         if (!paper_id) {
             console.error('缺少论文ID');
@@ -43,7 +43,13 @@ Deno.serve(async (req) => {
             });
         }
 
-        console.log('开始构建论文网络:', { paper_id, depth, max_nodes });
+        console.log('开始构建论文网络:', { 
+            paper_id, 
+            depth, 
+            max_nodes,
+            timestamp: new Date().toISOString(),
+            userAgent: req.headers.get('user-agent')?.substring(0, 50)
+        });
 
         // 获取环境变量
         const semanticScholarApiKey = Deno.env.get('SEMANTIC_SCHOLAR_API_KEY');
@@ -250,6 +256,26 @@ Deno.serve(async (req) => {
             responseData.warning = networkData._warning;
             // 从网络数据中移除警告，避免前端处理
             delete networkData._warning;
+        }
+
+        // 检查响应大小，如果过大则进行截断
+        const responseJson = JSON.stringify(responseData);
+        const responseSizeKB = new Blob([responseJson]).size / 1024;
+        
+        console.log(`响应大小: ${responseSizeKB.toFixed(2)} KB`);
+        
+        if (responseSizeKB > 500) { // 如果响应超过500KB
+            console.warn(`响应过大 (${responseSizeKB.toFixed(2)} KB)，进行截断`);
+            
+            // 截断节点和边数据
+            const truncatedData = {
+                ...networkData,
+                nodes: networkData.nodes.slice(0, 80), // 限制最多80个节点
+                edges: networkData.edges.slice(0, 150) // 限制最多150条边
+            };
+            
+            responseData.data = truncatedData;
+            responseData.warning = `网络过大已截断：显示前${truncatedData.nodes.length}个节点和${truncatedData.edges.length}条边`;
         }
 
         return new Response(JSON.stringify(responseData), {
@@ -670,6 +696,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     const visitedPapers = new Set();
     const papersToProcess = [{ paper: rootPaper, currentDepth: 0 }];
     let apiCallCount = 0;
+    const startTime = Date.now();
+    const maxExecutionTime = 50000; // 50秒最大执行时间
 
     console.log('开始构建多层论文网络:', {
         rootPaper: rootPaper.title?.substring(0, 50) + '...',
@@ -686,6 +714,12 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
     visitedPapers.add(rootPaper.paperId);
 
     while (papersToProcess.length > 0 && nodes.size < maxNodes) {
+        // 检查执行时间，避免超时
+        if (Date.now() - startTime > maxExecutionTime) {
+            console.warn('网络构建超时，停止进一步扩展');
+            break;
+        }
+        
         const { paper, currentDepth } = papersToProcess.shift();
 
         console.log(`处理论文 (深度 ${currentDepth}/${depth}):`, {
@@ -756,8 +790,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                         }
                     }
                     
-                    // 严格控制API调用间隔
-                    const delay = apiKey ? 1000 : 1500;
+                    // 严格控制API调用间隔 - 增加延迟以避免速率限制
+                    const delay = apiKey ? 1200 : 2000;
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
@@ -812,8 +846,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
                         }
                     }
                     
-                    // 严格控制API调用间隔
-                    const delay = apiKey ? 1000 : 1500;
+                    // 严格控制API调用间隔 - 增加延迟以避免速率限制
+                    const delay = apiKey ? 1200 : 2000;
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
@@ -822,7 +856,8 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
         console.log(`完成深度 ${currentDepth} 的处理，当前网络规模: ${nodes.size} 节点, ${edges.length} 边`);
     }
 
-    console.log(`多层网络构建完成: ${nodes.size} 个节点, ${edges.length} 条边, ${apiCallCount} 次API调用`);
+    const executionTime = Date.now() - startTime;
+    console.log(`多层网络构建完成: ${nodes.size} 个节点, ${edges.length} 条边, ${apiCallCount} 次API调用, 耗时: ${executionTime}ms`);
     console.log('网络层次分布:', getDepthDistribution(nodes));
 
     return {
@@ -834,19 +869,19 @@ async function buildPaperNetwork(rootPaper, depth, maxNodes, apiKey) {
 // 根据深度获取引用论文的数量限制
 function getReferencesLimit(currentDepth, maxDepth) {
     switch (currentDepth) {
-        case 0: return 20; // 根节点：更多引用
-        case 1: return 15; // 第一层：中等数量
-        case 2: return 10; // 第二层：较少数量
-        default: return 5; // 更深层：最少数量
+        case 0: return 12; // 根节点：减少引用数量
+        case 1: return 8;  // 第一层：中等数量
+        case 2: return 5;  // 第二层：较少数量
+        default: return 3; // 更深层：最少数量
     }
 }
 
 // 根据深度获取被引用论文的数量限制
 function getCitationsLimit(currentDepth, maxDepth) {
     switch (currentDepth) {
-        case 0: return 15; // 根节点：处理被引用
-        case 1: return 8;  // 第一层：少量被引用
-        case 2: return 3;  // 第二层：极少被引用
+        case 0: return 10; // 根节点：减少被引用数量
+        case 1: return 5;  // 第一层：少量被引用
+        case 2: return 2;  // 第二层：极少被引用
         default: return 0; // 更深层：不处理被引用
     }
 }

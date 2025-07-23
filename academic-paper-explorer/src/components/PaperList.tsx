@@ -86,12 +86,44 @@ const PaperList: React.FC = () => {
         source: paper.source
       })
       
-      const networkData = await networkMutation.mutateAsync({
+      // 智能网络生成策略：根据论文年份和引用数调整参数
+      let networkParams = {
         paper_id: paperId,
-        depth: 3,
-        max_nodes: 200
-      })
-      setNetworkData(networkData)
+        depth: 2,
+        max_nodes: 100
+      };
+      
+      // 如果是较老的论文或高引用论文，使用更保守的参数
+      const paperYear = paper.publication_year || paper.year;
+      const citationCount = paper.citation_count || 0;
+      
+      if (paperYear && paperYear < 2015 || citationCount > 1000) {
+        console.log('检测到高引用或较老论文，使用保守参数');
+        networkParams = {
+          paper_id: paperId,
+          depth: 1,
+          max_nodes: 50
+        };
+      }
+      
+      try {
+        // 首次尝试
+        const networkData = await networkMutation.mutateAsync(networkParams);
+        setNetworkData(networkData);
+      } catch (firstError) {
+        console.warn('首次网络构建失败，尝试降级参数:', firstError.message);
+        
+        // 如果首次失败，尝试最小参数
+        const fallbackParams = {
+          paper_id: paperId,
+          depth: 1,
+          max_nodes: 30
+        };
+        
+        console.log('使用降级参数重试:', fallbackParams);
+        const networkData = await networkMutation.mutateAsync(fallbackParams);
+        setNetworkData(networkData);
+      }
     } catch (error) {
       console.error('获取网络数据失败:', error)
       // 错误已经在useApiQueries中通过toast显示，这里不需要重复处理

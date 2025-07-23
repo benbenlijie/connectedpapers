@@ -238,6 +238,12 @@ const NetworkGraph: React.FC = () => {
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-white mb-2">正在构建网络图...</h3>
           <p className="text-gray-400">正在获取引用关系并计算网络结构</p>
+          <div className="mt-4 text-xs text-gray-500 space-y-1">
+            <p>• 获取论文引用数据</p>
+            <p>• 构建节点和边关系</p>
+            <p>• 计算网络布局</p>
+            <p className="text-yellow-400">请耐心等待，大约需要10-30秒</p>
+          </div>
         </div>
       </div>
     )

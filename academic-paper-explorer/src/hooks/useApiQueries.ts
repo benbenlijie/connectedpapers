@@ -75,6 +75,10 @@ export function useFetchPaperNetwork() {
                 errorMessage = 'API访问受限，这可能是由于速率限制。请稍等片刻后重试，或联系管理员配置API密钥'
               } else if (error.message && error.message.includes('429')) {
                 errorMessage = 'API请求过于频繁，请稍等片刻后重试'
+              } else if (error.message && error.message.includes('timeout')) {
+                errorMessage = '网络构建超时，请尝试选择较新的论文或稍后重试'
+              } else if (error.message && error.message.includes('too large')) {
+                errorMessage = '该论文的引用网络过于庞大，请尝试其他论文'
               } else {
                 errorMessage = error.message || '网络构建失败，请重试'
               }
