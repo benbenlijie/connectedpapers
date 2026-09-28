@@ -23,3 +23,8 @@ export function upsertPaper(p: Partial<S2Paper> & { paperId: string }): void {
 export function upsertCitation(citing: string, cited: string): void {
   db.run('insert or ignore into citations (citing_paper_id, cited_paper_id) values (?,?)', [citing, cited])
 }
+
+/** 确保 papers 表存在该 id 的最小行，避免 citations 外键失败。 */
+export function ensurePaperStub(paperId: string): void {
+  db.run('insert or ignore into papers (id, title) values (?, ?)', [paperId, paperId])
+}
