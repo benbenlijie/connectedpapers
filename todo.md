@@ -1,39 +1,28 @@
-# 任务：构建学术论文关联网络可视化分析平台
+# 任务：学术论文关联网络可视化分析平台
 
-## 目标：创建一个类似 Connected Papers 的交互式学术探索网站，帮助用户快速理解论文引用脉络和学术影响力
+## 目标：创建一个类似 Connected Papers 的交互式学术探索网站，帮助用户快速理解论文引用脉络和学术影响力。
 
-## 核心技术栈：
-- 后端：FastAPI + Neo4j/Postgres + Celery + Redis
-- 前端：React 19 + Vite + TypeScript + TailwindCSS + @vis-network/react
-- 数据源：OpenAlex、Semantic Scholar、CrossRef API
-- 部署：Docker Compose + nginx
+## 现状（已完成）
 
-## 执行步骤：
+项目已收敛为**本地单进程架构**：
 
-### [✅] STEP 1: 获取 Supabase 认证信息
-- 为后续数据存储和部署准备Supabase环境
-- 用于存储用户会话、论文缓存等数据
-→ 系统步骤 **已完成**
+- **后端**：Bun 单进程 + `bun:sqlite`，数据落盘 `data/app.db`，提供 `/api/search`、`/api/details`、`/api/network`、`/api/jobs/:id`。
+- **前端**：React 18 + Vite 6 + TypeScript + TailwindCSS + React Query + Zustand + d3-force。
+- **数据源**：Semantic Scholar、OpenAlex。
+- **运行**：`bash scripts/setup.sh` → `bun run build:web` → `bun run server`（`http://127.0.0.1:8787`，默认仅回环）。
+- **部署**：本地运行/常驻，见 [DEPLOYMENT_GUIDE](DEPLOYMENT_GUIDE.md)。
 
-### [✅] STEP 2: 构建完整的学术论文网络可视化Web应用
-- 实现三栏布局（论文列表+图谱可视化+详情面板）
-- 集成OpenAlex、Semantic Scholar、CrossRef等学术API
-- 实现力导向图可视化，支持节点尺寸/颜色编码
-- 实现PageRank影响力计算和社区检测算法
-- 添加多维度过滤器和交互控制
-- 实现响应式设计和性能优化
-→ Web开发步骤 **已完成**
+已完成的里程碑：
 
-**🎉 项目网站地址**: https://2n1zupauauvf.space.minimax.io
+- [x] 三栏布局（论文列表 + 图谱可视化 + 详情面板）
+- [x] 多数据源论文搜索与详情
+- [x] 力导向图可视化与邻接高亮（Phase 5 渲染，含 Web Worker 布局）
+- [x] 本地 SQLite 缓存与网络图构建
 
-## 最终交付物：
-- 一个可公开访问的学术论文网络可视化分析平台
-- 支持DOI/arXiv/Semantic Scholar ID输入
-- 实时生成交互式论文引用关系图谱
-- 提供影响力指标分析和多视图联动
+## 后续可选项（未承诺）
 
-## 成功标准：
-- 输入DOI后≤5秒生成150节点图
-- 支持并发50用户，P95响应时间≤1秒
-- 图交互帧率≥60fps
-- 功能完整，界面友好，性能优秀
+- [ ] 将全局引用图落库，跨会话复用已构建的网络。
+- [ ] 引入 WebGL 渲染以支撑更大规模（数千节点）图。
+- [ ] 影响力指标（PageRank / 社区检测）的进一步可视化。
+
+> 历史说明：早期规划中的云端后端方案已被本地 Bun + SQLite 架构取代，不再维护。
