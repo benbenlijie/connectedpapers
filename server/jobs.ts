@@ -4,6 +4,7 @@ import { ApiError } from './errors'
 import { buildNetwork } from './graph'
 import { getPaper } from './s2'
 import { resolvePaperId } from './ids'
+import { toS2Input } from './resolve'
 import { cacheNetwork, queryHash, getCachedNetwork } from './db-queries'
 import { config } from './config'
 
@@ -46,7 +47,7 @@ export function setJob(id: string, patch: { status?: string; progress?: unknown;
 export function recoverJobs(): void {
   db.run("update jobs set status='pending' where status='running'")
   const pending = db.query("select id from jobs where status='pending'").all() as { id: string }[]
-  for (const { id } of pending) void runJob(id)
+  for (const { id } of pending) void runJob(id).catch((e) => console.error('runJob rejected', id, e))
 }
 
 async function runJob(id: string): Promise<void> {
@@ -55,8 +56,7 @@ async function runJob(id: string): Promise<void> {
   try {
     const payload = JSON.parse(job.payload) as { paper_id: string; depth: number; max_nodes: number; query_hash: string }
     setJob(id, { status: 'running', progress: { phase: 'fetch-root', nodes: 0 } })
-    const resolved = resolvePaperId(payload.paper_id)
-    const root = await getPaper(resolved.s2Path)
+    const root = await getPaper(await toS2Input(payload.paper_id))
     const graph = await buildNetwork(root, {
       depth: payload.depth,
       maxNodes: payload.max_nodes,
@@ -66,7 +66,11 @@ async function runJob(id: string): Promise<void> {
     cacheNetwork(payload.query_hash, root.paperId, payload.depth, payload.max_nodes, graph)
     setJob(id, { status: 'done', progress: { phase: 'done', nodes: graph.nodes.length }, result_hash: payload.query_hash })
   } catch (e) {
-    setJob(id, { status: 'failed', error: e instanceof Error ? e.message : String(e) })
+    try {
+      setJob(id, { status: 'failed', error: e instanceof Error ? e.message : String(e) })
+    } catch (err) {
+      console.error('setJob failed', id, err)
+    }
   }
 }
 
@@ -85,6 +89,6 @@ export function enqueueNetwork(payload: { paper_id: string; depth: number; max_n
   const cached = getCachedNetwork(hash)
   if (cached) return { cached }
   const id = createJob('network', { paper_id: payload.paper_id, depth, max_nodes: maxNodes, query_hash: hash })
-  void runJob(id)
+  void runJob(id).catch((e) => console.error('runJob rejected', id, e))
   return { job_id: id }
 }

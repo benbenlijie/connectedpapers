@@ -1,7 +1,8 @@
 import { readJson, json, ApiError } from '../errors'
 import { searchOpenAlex } from '../openalex'
 import { getPaper } from '../s2'
-import { resolvePaperId } from '../ids'
+import { toS2Input } from '../resolve'
+import { normalizeS2Paper } from '../normalize'
 import { logSearch } from '../db-queries'
 import { config } from '../config'
 
@@ -21,7 +22,7 @@ const S2_SEARCH_FIELDS =
 export async function searchRoute(req: Request): Promise<Response> {
   const started = Date.now()
   const { query, query_type = 'keyword' } = await readJson<Body>(req)
-  if (!query?.trim()) throw new ApiError('VALIDATION_FAILED', '查询内容不能为空')
+  if (typeof query !== 'string' || !query.trim()) throw new ApiError('VALIDATION_FAILED', '查询内容不能为空')
 
   let papers: any[] = []
   if (query_type === 'keyword') {
@@ -35,10 +36,9 @@ export async function searchRoute(req: Request): Promise<Response> {
     const oa = oaResult.status === 'fulfilled' ? oaResult.value : []
     papers = [...s2.map(normalizeS2), ...oa.map(normalizeOa)]
   } else {
-    const resolved = resolvePaperId(query)
     let p: any
     try {
-      p = await getPaper(resolved.s2Path)
+      p = await getPaper(await toS2Input(query))
     } catch (e) {
       const status = (e as { status?: number })?.status
       if (status === 404) throw new ApiError('PAPER_NOT_FOUND', '论文未找到', 404)
@@ -53,17 +53,11 @@ export async function searchRoute(req: Request): Promise<Response> {
 }
 
 function normalizeS2(p: any) {
-  return {
-    source: 'semantic_scholar', semantic_scholar_id: p.paperId, title: p.title, abstract: p.abstract,
-    publication_year: p.year, citation_count: p.citationCount ?? 0,
-    authors: (p.authors ?? []).map((a: any) => a.name).join(', '), venue: p.venue,
-    fields_of_study: p.fieldsOfStudy ?? [], url: p.url, pdf_url: p.openAccessPdf?.url,
-    doi: p.externalIds?.DOI ?? undefined,
-  }
+  return { source: 'semantic_scholar', ...normalizeS2Paper(p) }
 }
 function normalizeOa(w: any) {
   return {
-    source: 'openalex', openalex_id: w.id, title: w.title, abstract: null,
+    id: w.id, source: 'openalex', openalex_id: w.id, title: w.title, abstract: null,
     publication_year: w.publication_year, citation_count: w.cited_by_count ?? 0,
     authors: (w.authorships ?? []).map((a: any) => a.author?.display_name).filter(Boolean).join(', '),
     venue: w.primary_location?.source?.display_name, fields_of_study: (w.concepts ?? []).map((c: any) => c.display_name),
