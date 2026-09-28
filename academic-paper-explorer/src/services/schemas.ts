@@ -4,11 +4,11 @@ export const paperSchema = z.object({
   id: z.string().optional(),
   semantic_scholar_id: z.string().optional(),
   openalex_id: z.string().optional(),
-  title: z.string(),
+  title: z.string().nullish(),
   abstract: z.string().nullish(),
   publication_year: z.number().nullish(),
-  citation_count: z.number().default(0),
-  authors: z.string().default(''),
+  citation_count: z.number().nullish(),
+  authors: z.string().nullish(),
   venue: z.string().nullish(),
   journal: z.string().nullish(),
   url: z.string().nullish(),
@@ -30,7 +30,7 @@ export const networkDataSchema = z.object({
 export const jobStatusSchema = z.object({
   status: z.enum(['pending', 'running', 'done', 'failed']),
   progress: z.any().optional(),
-  data: networkDataSchema.optional(),
+  data: networkDataSchema.nullish(),
   error: z.string().nullish(),
 })
 
