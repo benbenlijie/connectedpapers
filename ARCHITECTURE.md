@@ -83,10 +83,12 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `hooks/useSearchPapers.ts` | React Query wrapper for `POST /api/search`. |
 | `hooks/usePaperDetails.ts` | React Query wrapper for `POST /api/details`. |
 | `hooks/usePaperNetwork.ts` | React Query wrapper for the network job; picks adaptive depth/maxNodes. |
-| `graph/computeLayout.ts` | Pure synchronous d3-force layout (testable, worker-safe). |
-| `graph/layout.worker.ts` | WebWorker shim around `computeLayout`. |
-| `graph/useLayout.ts` | React hook driving the worker with request-id guarding. |
-| `store/useUiStore.ts` | Zustand store for UI-only state: selection, highlight, filters. |
+| `graph/encoding.ts` | Pure color/size encoding by dimension (cluster/year/field, citations/pagerank). |
+| `graph/graphFilters.ts` | Pure timeline/year/citations/field/venue filtering + dangling-edge removal. |
+| `graph/graphAdapter.ts` | Pure adapter to the force-graph `{nodes, links}` shape. |
+| `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
+| `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
+| `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline. |
 
 ## Key design decisions
 
@@ -169,9 +171,13 @@ Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
   encountered while crawling a specific root; there is no repository-wide graph to
   query offline. A future version could persist all fetched edges and run global
   analytics.
-- **SVG rendering does not scale to very large graphs.** The current graph view is
-  fine for the configured caps (`maxNodes` default 200, route cap 300); pushing
-  into the thousands would need WebGL (e.g. a GPU renderer) to stay interactive.
+- **Rendering is WebGL/canvas, not SVG.** The graph is drawn by `react-force-graph`
+  (`ForceGraph2D` canvas for the default view, `ForceGraph3D` three.js loaded lazily
+  for the 3D toggle), which stays interactive well past the configured caps
+  (`maxNodes` default 200, route cap 300). The previous hand-written Canvas 2D
+  renderer and custom WebWorker d3-force layout were removed in favor of the
+  library's own simulation. The 3D bundle (~348 kB gzip) is code-split and only
+  fetched on first 3D switch; the initial bundle carries the 2D renderer.
 - **No authentication.** Acceptable while loopback-only; if the server is ever
   exposed beyond `127.0.0.1`, add auth and request limits.
 - **Single-process job queue.** Jobs are in-process and persisted only as rows; a
