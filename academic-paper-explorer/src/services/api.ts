@@ -1,0 +1,62 @@
+import {
+  searchResponseSchema, networkDataSchema, jobStatusSchema, detailsResponseSchema,
+} from './schemas'
+import type { NetworkData, Paper, PaperDetails } from '../types/domain'
+
+const API = '/api'
+
+export class ApiError extends Error {
+  constructor(public code: string, message: string) { super(message) }
+}
+
+const MESSAGES: Record<string, string> = {
+  PAPER_NOT_FOUND: '找不到指定的论文，请检查论文ID',
+  PAPER_FETCH_FAILED: '无法从数据源获取论文，可能受速率限制，请稍后重试',
+  MISSING_PAPER_ID: '论文ID缺失，请选择有效的论文',
+  RATE_LIMITED: 'API请求过于频繁，请稍后重试',
+  NETWORK_BUILD_FAILED: '网络构建失败，请重试',
+  JOB_NOT_FOUND: '任务不存在或已过期',
+}
+
+async function request(path: string, body?: unknown): Promise<any> {
+  const res = await fetch(API + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : {}
+  if (!res.ok) {
+    const code = data?.error?.code ?? 'INTERNAL_SERVER_ERROR'
+    throw new ApiError(code, MESSAGES[code] ?? data?.error?.message ?? '请求失败')
+  }
+  return data
+}
+
+/**
+ * 入队建图并轮询至完成。放在单个 queryFn 内，让 React Query 以 paperId 为键共享缓存，
+ * 多个组件调用不会重复触发。
+ */
+async function networkWithPolling(paperId: string, depth: number, maxNodes: number): Promise<NetworkData> {
+  const res = await request('/network', { paper_id: paperId, depth, max_nodes: maxNodes })
+  if (res.data) return networkDataSchema.parse(res.data) as NetworkData
+  const jobId: string = res.job_id
+  const deadline = Date.now() + 90_000
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500))
+    const job = jobStatusSchema.parse(await request(`/jobs/${jobId}`))
+    if (job.status === 'done' && job.data) return job.data as NetworkData
+    if (job.status === 'failed') throw new Error(job.error ?? '网络构建失败')
+  }
+  throw new Error('网络构建超时')
+}
+
+export const api = {
+  async search(query: string, query_type: string): Promise<{ papers: Paper[]; total_count: number }> {
+    return searchResponseSchema.parse(await request('/search', { query, query_type })).data as any
+  },
+  async details(paperId: string): Promise<PaperDetails> {
+    return detailsResponseSchema.parse(await request('/details', { paper_id: paperId })).data as any
+  },
+  networkWithPolling,
+}
