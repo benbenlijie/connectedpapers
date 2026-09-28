@@ -153,3 +153,10 @@ deployment_config/
 
 # 本地配置文件
 .local 
+
+# 本地后端运行时数据
+data/
+*.db
+*.db-journal
+server/.env
+supabase/.temp/
