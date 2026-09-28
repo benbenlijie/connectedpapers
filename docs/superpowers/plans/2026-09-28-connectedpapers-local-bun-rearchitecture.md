@@ -1028,6 +1028,7 @@ git commit -m "feat(server): openalex/arxiv clients and paper persistence"
 **Files:**
 - Create: `server/graph.ts`
 - Test: `server/graph.test.ts`
+- Modify: `server/papers.ts` (追加 `ensurePaperStub`)
 
 - [ ] Step 1: 写失败测试
 
@@ -1060,6 +1061,19 @@ test('pagerank sums to ~1 and favors linked node', () => {
 Run: `bun test server/graph.test.ts`
 Expected: FAIL。
 
+- [ ] Step 2.5: 给 `papers.ts` 增加 `ensurePaperStub`（修复 FK 顺序问题）
+
+`citations` 表两列都是外键。BFS 在为某条边写 `upsertCitation` 时，边的**另一端论文**可能尚未落库（它要等下一轮 batch 才取回），此时插入会抛 `FOREIGN KEY constraint failed`（`sqlite insert or ignore` **不能**屏蔽 FK 错误）。因此写 citation 前先确保端点存在。
+
+在 `server/papers.ts` 末尾追加：
+
+```ts
+/** 确保 papers 表存在该 id 的最小行，避免 citations 外键失败。 */
+export function ensurePaperStub(paperId: string): void {
+  db.run('insert or ignore into papers (id, title) values (?, ?)', [paperId, paperId])
+}
+```
+
 - [ ] Step 3: 实现 graph.ts（含修复原 `ID;` 导致的社区检测崩溃——用 `connectedComponents` 取代）
 
 Create `server/graph.ts`:
@@ -1067,7 +1081,7 @@ Create `server/graph.ts`:
 ```ts
 import { getPapersBatch, type S2Paper } from './s2'
 import { config } from './config'
-import { upsertPaper, upsertCitation } from './papers'
+import { upsertPaper, upsertCitation, ensurePaperStub } from './papers'
 
 export interface GraphNode {
   id: string; label: string; title: string; abstract?: string; year?: number
@@ -1111,12 +1125,19 @@ export function pagerank(nodes: GraphNode[], edges: GraphEdge[], damping = 0.85,
   for (let i = 0; i < iterations; i++) {
     const next = new Map<string, number>()
     for (const node of nodes) next.set(node.id, (1 - damping) / n)
+    let dangling = 0
     for (const node of nodes) {
       const links = out.get(node.id)!
-      if (!links.length) continue
+      if (!links.length) { dangling += pr.get(node.id) ?? 0; continue }
       const share = (damping * (pr.get(node.id) ?? 0)) / links.length
-      for (const t of links) next.set(t, (next.get(t) ?? 0) + share)
+      for (const t of links) {
+        if (next.has(t)) next.set(t, next.get(t)! + share)
+        else dangling += (pr.get(node.id) ?? 0) / links.length
+      }
     }
+    // 悬挂节点（无出链）的质量按标准 PageRank 均摊，保证总和恒为 1。
+    const dShare = (damping * dangling) / n
+    for (const node of nodes) next.set(node.id, (next.get(node.id) ?? 0) + dShare)
     for (const [k, v] of next) pr.set(k, v)
   }
   return pr
@@ -1166,6 +1187,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
       for (const r of (paper.references ?? []).slice(0, refLimit)) {
         if (!edges.some((e) => e.from === paper.paperId && e.to === r.paperId)) {
           edges.push({ from: paper.paperId, to: r.paperId, type: 'reference', weight: 1 })
+          ensurePaperStub(r.paperId)
           upsertCitation(paper.paperId, r.paperId)
         }
         if (!seen.has(r.paperId) && refIds.length + citeIds.length < maxNodes) refIds.push(r.paperId)
@@ -1174,6 +1196,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
         for (const c of (paper.citations ?? []).slice(0, citeLimit)) {
           if (!edges.some((e) => e.from === c.paperId && e.to === paper.paperId)) {
             edges.push({ from: c.paperId, to: paper.paperId, type: 'citation', weight: 1 })
+            ensurePaperStub(c.paperId)
             upsertCitation(c.paperId, paper.paperId)
           }
           if (!seen.has(c.paperId) && refIds.length + citeIds.length < maxNodes) citeIds.push(c.paperId)
@@ -1188,7 +1211,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     const nextFrontier: S2Paper[] = []
     fetched.forEach((p, i) => {
       if (!p || nodes.size >= maxNodes) return
-      seen.add(wanted[i])
+      seen.add(p.paperId)
       nodes.set(p.paperId, toNode(p, false, level + 1))
       upsertPaper(p)
       nextFrontier.push(p)
