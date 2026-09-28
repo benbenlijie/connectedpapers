@@ -2,7 +2,7 @@ import { config } from './config'
 import { withRetry } from './retry'
 
 const FIELDS =
-  'paperId,title,abstract,year,citationCount,authors,venue,url,openAccessPdf,fieldsOfStudy,' +
+  'paperId,title,abstract,year,citationCount,authors,venue,url,openAccessPdf,fieldsOfStudy,externalIds,' +
   'references.paperId,references.title,references.year,citations.paperId,citations.title,citations.year'
 
 export interface S2Paper {
@@ -15,7 +15,9 @@ export interface S2Paper {
   venue?: string
   url?: string
   openAccessPdf?: { url?: string }
+  externalIds?: { DOI?: string; ArXiv?: string; [key: string]: string | undefined }
   fieldsOfStudy?: string[]
+  journal?: string
   references?: Array<{ paperId: string; title?: string; year?: number; citationCount?: number }>
   citations?: Array<{ paperId: string; title?: string; year?: number; citationCount?: number }>
 }

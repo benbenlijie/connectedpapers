@@ -23,5 +23,10 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts): Promi
 
 function defaultRetryOn(e: unknown): boolean {
   const s = (e as { status?: number })?.status
-  return s === 429 || s === 403 || (typeof s === 'number' && s >= 500)
+  if (s === 429 || s === 403 || (typeof s === 'number' && s >= 500)) return true
+  if (typeof DOMException !== 'undefined' && e instanceof DOMException) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') return true
+  }
+  if (e instanceof TypeError) return true
+  return false
 }
