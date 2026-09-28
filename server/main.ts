@@ -13,7 +13,7 @@ async function serveStatic(pathname: string): Promise<Response> {
   if (safe.includes('..')) return json({ error: { code: 'VALIDATION_FAILED', message: 'bad path' } }, 400)
   let file = Bun.file(WEB_DIST + safe)
   if (!(await file.exists())) file = Bun.file(WEB_DIST + '/index.html') // SPA fallback
-  if (!(await file.exists())) return json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'frontend not built (run pnpm build:web)' } }, 404)
+  if (!(await file.exists())) return json({ error: { code: 'INTERNAL_SERVER_ERROR', message: "frontend not built (run 'bun run build:web')" } }, 404)
   return new Response(file)
 }
 
