@@ -1,0 +1,99 @@
+create table if not exists papers (
+  id                  text primary key,
+  doi                 text unique,
+  arxiv_id            text,
+  semantic_scholar_id text unique,
+  openalex_id         text unique,
+  title               text not null,
+  abstract            text,
+  publication_year    integer,
+  publication_date    text,
+  citation_count      integer not null default 0,
+  reference_count     integer not null default 0,
+  authors_text        text not null default '',
+  venue               text,
+  journal             text,
+  url                 text,
+  pdf_url             text,
+  fields_of_study     text not null default '[]',
+  is_open_access      integer not null default 0,
+  source              text,
+  raw                 text,
+  fetched_at          text not null default (datetime('now')),
+  created_at          text not null default (datetime('now')),
+  updated_at          text not null default (datetime('now'))
+);
+create index if not exists papers_doi_idx   on papers(doi);
+create index if not exists papers_s2_idx    on papers(semantic_scholar_id);
+create index if not exists papers_oalex_idx on papers(openalex_id);
+create index if not exists papers_year_idx  on papers(publication_year);
+
+create table if not exists authors (
+  id                  integer primary key autoincrement,
+  name                text not null,
+  semantic_scholar_id text unique,
+  h_index             integer not null default 0,
+  paper_count         integer not null default 0,
+  citation_count      integer not null default 0,
+  affiliations        text not null default '[]',
+  homepage            text,
+  created_at          text not null default (datetime('now')),
+  updated_at          text not null default (datetime('now'))
+);
+
+create table if not exists paper_authors (
+  paper_id        text not null references papers(id) on delete cascade,
+  author_id       integer not null references authors(id) on delete cascade,
+  author_position integer not null default 0,
+  primary key (paper_id, author_id)
+);
+create index if not exists paper_authors_author_idx on paper_authors(author_id);
+
+create table if not exists citations (
+  citing_paper_id text not null references papers(id) on delete cascade,
+  cited_paper_id  text not null references papers(id) on delete cascade,
+  is_influential  integer not null default 0,
+  contexts        text not null default '[]',
+  created_at      text not null default (datetime('now')),
+  primary key (citing_paper_id, cited_paper_id)
+);
+create index if not exists citations_cited_idx  on citations(cited_paper_id);
+create index if not exists citations_citing_idx on citations(citing_paper_id);
+
+create table if not exists paper_networks (
+  query_hash    text primary key,
+  root_paper_id text not null,
+  depth         integer not null default 1,
+  max_nodes     integer not null default 100,
+  graph_version integer not null default 1,
+  network_data  text not null,
+  node_count    integer not null default 0,
+  edge_count    integer not null default 0,
+  generated_at  text not null default (datetime('now')),
+  expires_at    text not null
+);
+create index if not exists paper_networks_expires_idx on paper_networks(expires_at);
+create index if not exists paper_networks_root_idx    on paper_networks(root_paper_id);
+
+create table if not exists jobs (
+  id          text primary key,
+  kind        text not null,
+  payload     text not null,
+  status      text not null default 'pending',
+  attempts    integer not null default 0,
+  progress    text not null default '{}',
+  result_hash text,
+  error       text,
+  created_at  text not null default (datetime('now')),
+  updated_at  text not null default (datetime('now'))
+);
+create index if not exists jobs_status_idx on jobs(status, created_at);
+
+create table if not exists search_queries (
+  id                integer primary key autoincrement,
+  query_text        text,
+  query_type        text,
+  results_count     integer not null default 0,
+  execution_time_ms integer not null default 0,
+  created_at        text not null default (datetime('now'))
+);
