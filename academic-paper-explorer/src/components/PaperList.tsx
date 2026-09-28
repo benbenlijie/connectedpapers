@@ -1,5 +1,5 @@
 import React from 'react'
-import { FileText, ExternalLink, Calendar, Quote, Users } from 'lucide-react'
+import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
@@ -12,7 +12,7 @@ const PaperList: React.FC = () => {
     submittedQuery
   } = useUiStore()
 
-  const { data } = useSearchPapers(submittedQuery)
+  const { data, isFetching, error, refetch } = useSearchPapers(submittedQuery)
   const searchResults = data?.papers ?? []
 
   // 应用过滤器
@@ -73,6 +73,34 @@ const PaperList: React.FC = () => {
       case 'crossref': return 'bg-purple-600'
       default: return 'bg-gray-600'
     }
+  }
+
+  if (isFetching && !data) {
+    return (
+      <div className="p-6 text-center">
+        <Loader2 className="w-12 h-12 text-blue-500 mx-auto mb-4 animate-spin" />
+        <p className="text-gray-400">搜索中...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <p className="text-red-400">搜索失败</p>
+        <p className="text-sm text-gray-500 mt-2 break-words">
+          {error.message}
+        </p>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200"
+        >
+          重试
+        </button>
+      </div>
+    )
   }
 
   if (searchResults.length === 0) {
