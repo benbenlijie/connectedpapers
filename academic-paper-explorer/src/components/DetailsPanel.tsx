@@ -1,14 +1,15 @@
 import React from 'react'
 import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
-import { useFetchPaperDetails } from '../hooks/useApiQueries'
+import { useUiStore } from '../store/useUiStore'
+import { usePaperDetails } from '../hooks/usePaperDetails'
+import { resolveClientId } from '../hooks/usePaperNetwork'
 
 const DetailsPanel: React.FC = () => {
-  const { selectedNodeId, selectedPaper } = useAppStore()
+  const { selectedNodeId, selectedPaper } = useUiStore()
   
   // 优先使用选中的节点ID，其次使用选中的论文ID
-  const paperId = selectedNodeId || (selectedPaper?.semantic_scholar_id || selectedPaper?.openalex_id || selectedPaper?.id)
-  const { data: paperDetails, isLoading, error } = useFetchPaperDetails(paperId)
+  const paperId = selectedNodeId || resolveClientId(selectedPaper)
+  const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
 
   if (!selectedPaper && !selectedNodeId) {
     return (

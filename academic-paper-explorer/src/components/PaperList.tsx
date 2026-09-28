@@ -1,20 +1,19 @@
 import React from 'react'
 import { FileText, ExternalLink, Calendar, Quote, Users } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
-import { useFetchPaperNetwork } from '../hooks/useApiQueries'
+import { useUiStore } from '../store/useUiStore'
+import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
 
 const PaperList: React.FC = () => {
   const {
-    searchResults,
     selectedPaper,
     setSelectedPaper,
-    setNetworkData,
-    setIsLoadingNetwork,
-    filters
-  } = useAppStore()
+    filters,
+    submittedQuery
+  } = useUiStore()
 
-  const networkMutation = useFetchPaperNetwork()
+  const { data } = useSearchPapers(submittedQuery)
+  const searchResults = data?.papers ?? []
 
   // 应用过滤器
   const filteredResults = searchResults.filter(paper => {
@@ -54,82 +53,8 @@ const PaperList: React.FC = () => {
     return true
   })
 
-  const handlePaperSelect = async (paper: Paper) => {
+  const handlePaperSelect = (paper: Paper) => {
     setSelectedPaper(paper)
-    
-    // 获取论文网络
-    setIsLoadingNetwork(true)
-    try {
-      // 优先使用semantic_scholar_id，如果没有则使用DOI，最后才使用其他ID
-      let paperId;
-      if (paper.semantic_scholar_id) {
-        paperId = paper.semantic_scholar_id;
-        console.log('使用Semantic Scholar ID');
-      } else if (paper.doi) {
-        paperId = paper.doi;
-        console.log('使用DOI');
-      } else if (paper.openalex_id) {
-        paperId = paper.openalex_id;
-        console.log('使用OpenAlex ID');
-      } else {
-        paperId = paper.id;
-        console.log('使用默认ID');
-      }
-      
-      if (!paperId) {
-        throw new Error('论文缺少有效的ID，无法构建网络图')
-      }
-      
-      console.log('选中论文:', {
-        title: paper.title,
-        paperId,
-        source: paper.source
-      })
-      
-      // 智能网络生成策略：根据论文年份和引用数调整参数
-      let networkParams = {
-        paper_id: paperId,
-        depth: 2,
-        max_nodes: 100
-      };
-      
-      // 如果是较老的论文或高引用论文，使用更保守的参数
-      const paperYear = paper.publication_year || paper.year;
-      const citationCount = paper.citation_count || 0;
-      
-      if (paperYear && paperYear < 2015 || citationCount > 1000) {
-        console.log('检测到高引用或较老论文，使用保守参数');
-        networkParams = {
-          paper_id: paperId,
-          depth: 1,
-          max_nodes: 50
-        };
-      }
-      
-      try {
-        // 首次尝试
-        const networkData = await networkMutation.mutateAsync(networkParams);
-        setNetworkData(networkData);
-      } catch (firstError) {
-        console.warn('首次网络构建失败，尝试降级参数:', firstError.message);
-        
-        // 如果首次失败，尝试最小参数
-        const fallbackParams = {
-          paper_id: paperId,
-          depth: 1,
-          max_nodes: 30
-        };
-        
-        console.log('使用降级参数重试:', fallbackParams);
-        const networkData = await networkMutation.mutateAsync(fallbackParams);
-        setNetworkData(networkData);
-      }
-    } catch (error) {
-      console.error('获取网络数据失败:', error)
-      // 错误已经在useApiQueries中通过toast显示，这里不需要重复处理
-    } finally {
-      setIsLoadingNetwork(false)
-    }
   }
 
   const formatAuthors = (authors: string) => {

@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Loader2, ZoomIn, ZoomOut, RotateCcw, Maximize2, Play, Pause } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
+import { useUiStore } from '../store/useUiStore'
+import { usePaperNetwork } from '../hooks/usePaperNetwork'
 
 const NetworkGraph: React.FC = () => {
   const {
-    networkData,
-    isLoadingNetwork,
+    selectedPaper,
     selectedNodeId,
     setSelectedNodeId,
     setHighlightedNodes,
     filters
-  } = useAppStore()
+  } = useUiStore()
+
+  const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
@@ -231,7 +233,7 @@ const NetworkGraph: React.FC = () => {
     setHighlightedNodes([])
   }
 
-  if (isLoadingNetwork) {
+  if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-900">
         <div className="text-center">
@@ -244,6 +246,19 @@ const NetworkGraph: React.FC = () => {
             <p>• 计算网络布局</p>
             <p className="text-yellow-400">请耐心等待，大约需要10-30秒</p>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-900">
+        <div className="text-center">
+          <p className="text-red-400">网络构建失败</p>
+          <p className="text-gray-400 text-sm mt-2">
+            {(error as Error).message}
+          </p>
         </div>
       </div>
     )
