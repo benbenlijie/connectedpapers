@@ -20,6 +20,7 @@ export const paperSchema = z.object({
 
 export const searchResponseSchema = z.object({
   data: z.object({ papers: z.array(paperSchema), total_count: z.number() }),
+  warning: z.string().nullish(),
 })
 
 export const networkDataSchema = z.object({
