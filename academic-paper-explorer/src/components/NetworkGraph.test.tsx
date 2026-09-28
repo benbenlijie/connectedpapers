@@ -18,30 +18,35 @@ vi.mock('react-force-graph-2d', () => ({
   ),
 }))
 
-vi.mock('../hooks/usePaperNetwork', () => ({
-  usePaperNetwork: () => ({
-    data: {
-      nodes: [
-        {
-          id: 'a', label: 'A', title: 'A', citationCount: 1, authors: '', isRoot: true,
-          pageRankScore: 0.5, clusterId: 0, size: 20, color: '#ffffff', year: 2000,
-        },
-        {
-          id: 'b', label: 'B', title: 'B', citationCount: 1, authors: '', isRoot: false,
-          pageRankScore: 0.2, clusterId: 1, size: 20, color: '#ffffff', year: 2010,
-        },
-      ],
-      edges: [{ from: 'a', to: 'b', type: 'reference', weight: 1 }],
+const NETWORK = {
+  nodes: [
+    {
+      id: 'a', label: 'A', title: 'A', citationCount: 1, authors: '', isRoot: true,
+      pageRankScore: 0.5, clusterId: 0, size: 20, color: '#ffffff', year: 2000,
     },
-    isLoading: false,
-    error: null,
-  }),
+    {
+      id: 'b', label: 'B', title: 'B', citationCount: 1, authors: '', isRoot: false,
+      pageRankScore: 0.2, clusterId: 1, size: 20, color: '#ffffff', year: 2010,
+    },
+  ],
+  edges: [{ from: 'a', to: 'b', type: 'reference', weight: 1 }],
+}
+
+let mockState: { data: typeof NETWORK | null; isLoading: boolean; error: Error | null } = {
+  data: NETWORK,
+  isLoading: false,
+  error: null,
+}
+
+vi.mock('../hooks/usePaperNetwork', () => ({
+  usePaperNetwork: () => mockState,
 }))
 
 import NetworkGraph from './NetworkGraph'
 import { useUiStore } from '../store/useUiStore'
 
 beforeEach(() => {
+  mockState = { data: NETWORK, isLoading: false, error: null }
   useUiStore.setState({
     selectedPaper: null,
     selectedNodeId: null,
@@ -53,6 +58,15 @@ beforeEach(() => {
 })
 
 describe('NetworkGraph', () => {
+  it('renders the graph after data arrives following a loading state', () => {
+    mockState = { data: null, isLoading: true, error: null }
+    const { rerender } = render(<NetworkGraph />)
+    expect(screen.queryByTestId('fg2d')).not.toBeInTheDocument()
+    mockState = { data: NETWORK, isLoading: false, error: null }
+    rerender(<NetworkGraph />)
+    expect(screen.getByTestId('fg2d')).toBeInTheDocument()
+  })
+
   it('selects a node on a single click', () => {
     render(<NetworkGraph />)
     fireEvent.click(screen.getByTestId('node-a-click'))

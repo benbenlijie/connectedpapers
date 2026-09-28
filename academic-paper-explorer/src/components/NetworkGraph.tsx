@@ -31,7 +31,7 @@ const NetworkGraph: React.FC = () => {
 
   const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper)
 
-  const containerRef = useRef<HTMLDivElement>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
   const fg2dRef = useRef<any>(null)
   const fg3dRef = useRef<any>(null)
   const lastClick = useRef<{ id: string; t: number } | null>(null)
@@ -41,19 +41,20 @@ const NetworkGraph: React.FC = () => {
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [engineTick, setEngineTick] = useState(0)
 
-  useEffect(() => {
-    const el = containerRef.current
+  const setContainer = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect()
+    roRef.current = null
     if (!el) return
     const measure = () => setDimensions({ width: el.clientWidth, height: el.clientHeight })
     measure()
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
-    ro?.observe(el)
-    window.addEventListener('resize', measure)
-    return () => {
-      ro?.disconnect()
-      window.removeEventListener('resize', measure)
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure)
+      ro.observe(el)
+      roRef.current = ro
     }
   }, [])
+
+  useEffect(() => () => roRef.current?.disconnect(), [])
 
   const { nodes: filteredNodes, edges: filteredEdges } = useMemo(() => {
     if (!networkData) return { nodes: [], edges: [] }
@@ -278,7 +279,7 @@ const NetworkGraph: React.FC = () => {
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainer}
       className="relative h-full bg-gray-900"
       onMouseMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect()
