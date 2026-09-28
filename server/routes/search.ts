@@ -3,8 +3,20 @@ import { searchOpenAlex } from '../openalex'
 import { getPaper } from '../s2'
 import { resolvePaperId } from '../ids'
 import { logSearch } from '../db-queries'
+import { config } from '../config'
 
 interface Body { query: string; query_type?: 'keyword' | 'doi' | 'arxiv' | 's2_id' }
+
+function s2Headers(): Record<string, string> {
+  const h: Record<string, string> = {
+    'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`,
+  }
+  if (config.s2.apiKey) h['x-api-key'] = config.s2.apiKey
+  return h
+}
+
+const S2_SEARCH_FIELDS =
+  'paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,externalIds'
 
 export async function searchRoute(req: Request): Promise<Response> {
   const started = Date.now()
@@ -14,8 +26,8 @@ export async function searchRoute(req: Request): Promise<Response> {
   let papers: any[] = []
   if (query_type === 'keyword') {
     const [s2Result, oaResult] = await Promise.allSettled([
-      fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=20&fields=paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf`, {
-        headers: process.env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': process.env.SEMANTIC_SCHOLAR_API_KEY! } : {},
+      fetch(`${config.s2.base}/paper/search?query=${encodeURIComponent(query)}&limit=20&fields=${S2_SEARCH_FIELDS}`, {
+        headers: s2Headers(),
       }).then((r) => (r.ok ? r.json() : { data: [] })).then((j) => j.data ?? []),
       searchOpenAlex(query),
     ])
@@ -24,7 +36,14 @@ export async function searchRoute(req: Request): Promise<Response> {
     papers = [...s2.map(normalizeS2), ...oa.map(normalizeOa)]
   } else {
     const resolved = resolvePaperId(query)
-    const p = await getPaper(resolved.s2Path)
+    let p: any
+    try {
+      p = await getPaper(resolved.s2Path)
+    } catch (e) {
+      const status = (e as { status?: number })?.status
+      if (status === 404) throw new ApiError('PAPER_NOT_FOUND', '论文未找到', 404)
+      throw new ApiError('PAPER_FETCH_FAILED', `无法获取论文: ${(e as Error).message}`, 502)
+    }
     papers = [normalizeS2(p)]
   }
 
@@ -39,6 +58,7 @@ function normalizeS2(p: any) {
     publication_year: p.year, citation_count: p.citationCount ?? 0,
     authors: (p.authors ?? []).map((a: any) => a.name).join(', '), venue: p.venue,
     fields_of_study: p.fieldsOfStudy ?? [], url: p.url, pdf_url: p.openAccessPdf?.url,
+    doi: p.externalIds?.DOI ?? undefined,
   }
 }
 function normalizeOa(w: any) {
