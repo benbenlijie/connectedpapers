@@ -1,5 +1,7 @@
 # ConnectedPapers 本地 Bun 重构 Implementation Plan
 
+> 注：本计划为历史文档，Phase 0–4 已实施；以后续提交代码为准（评审修复后代码与本文档可能有出入）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 删掉 Supabase，改成"本机一个 Bun 进程 + 一个 SQLite 文件"的本地应用——后端自持 key、自建索引、落库建图；前端同源 `fetch('/api/*')`。
