@@ -1322,12 +1322,20 @@ export function getJob(id: string): Job | null {
   return db.query('select id, kind, status, progress, result_hash, error from jobs where id=?').get(id) as Job | null
 }
 
-function setJob(id: string, patch: { status?: string; progress?: unknown; result_hash?: string; error?: string }): void {
-  const cur = db.query('select status, progress, attempts from jobs where id=?').get(id) as any
+export function setJob(id: string, patch: { status?: string; progress?: unknown; result_hash?: string; error?: string }): void {
+  const cur = db.query('select status, attempts from jobs where id=?').get(id) as { status: string; attempts: number } | null
   if (!cur) return
-  db.run("update jobs set status=?, progress=?, result_hash=?, error=?, attempts=?, updated_at=datetime('now') where id=?",
-    [patch.status ?? cur.status, JSON.stringify(patch.progress ?? JSON.parse(cur.progress)),
-     patch.result_hash ?? null, patch.error ?? null, cur.attempts + 1, id])
+  const sets: string[] = []
+  const args: unknown[] = []
+  if (patch.status !== undefined) { sets.push('status=?'); args.push(patch.status) }
+  if (patch.progress !== undefined) { sets.push('progress=?'); args.push(JSON.stringify(patch.progress)) }
+  if (patch.result_hash !== undefined) { sets.push('result_hash=?'); args.push(patch.result_hash) }
+  if (patch.error !== undefined) { sets.push('error=?'); args.push(patch.error) }
+  // 仅在状态真正变化时计数（run start / 终态流转），进度更新不再累加 attempts
+  if (patch.status !== undefined && patch.status !== cur.status) { sets.push('attempts=?'); args.push(cur.attempts + 1) }
+  sets.push("updated_at=datetime('now')")
+  args.push(id)
+  db.run(`update jobs set ${sets.join(', ')} where id=?`, args)
 }
 
 /** 启动时把中断的 running 任务复位，并重新拾起 pending。 */
@@ -1340,9 +1348,9 @@ export function recoverJobs(): void {
 async function runJob(id: string): Promise<void> {
   const job = db.query('select payload from jobs where id=?').get(id) as { payload: string } | null
   if (!job) return
-  const payload = JSON.parse(job.payload) as { paper_id: string; depth: number; max_nodes: number; query_hash: string }
-  setJob(id, { status: 'running', progress: { phase: 'fetch-root', nodes: 0 } })
   try {
+    const payload = JSON.parse(job.payload) as { paper_id: string; depth: number; max_nodes: number; query_hash: string }
+    setJob(id, { status: 'running', progress: { phase: 'fetch-root', nodes: 0 } })
     const resolved = resolvePaperId(payload.paper_id)
     const root = await getPaper(resolved.s2Path)
     const graph = await buildNetwork(root, {
