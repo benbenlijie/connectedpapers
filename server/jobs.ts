@@ -16,7 +16,14 @@ export function createJob(kind: string, payload: unknown): string {
 }
 
 export function getJob(id: string): Job | null {
-  return db.query('select id, kind, status, progress, result_hash, error from jobs where id=?').get(id) as Job | null
+  const row = db.query('select id, kind, status, progress, result_hash, error from jobs where id=?').get(id) as Job | null
+  if (!row) return null
+  if (!row.progress) return { ...row, progress: undefined }
+  try {
+    return { ...row, progress: JSON.parse(row.progress) }
+  } catch {
+    return row
+  }
 }
 
 export function setJob(id: string, patch: { status?: string; progress?: unknown; result_hash?: string; error?: string }): void {
