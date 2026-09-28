@@ -1,13 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Loader2, ZoomIn, ZoomOut, RotateCcw, Maximize2, Play, Pause } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
+import { useLayout } from '../graph/useLayout'
+import type { NetworkEdge, NetworkNode } from '../types/domain'
 
 const NetworkGraph: React.FC = () => {
   const {
     selectedPaper,
     selectedNodeId,
     setSelectedNodeId,
+    highlightedNodes,
     setHighlightedNodes,
     filters
   } = useUiStore()
@@ -20,8 +23,6 @@ const NetworkGraph: React.FC = () => {
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [nodes, setNodes] = useState<any[]>([])
-  const [edges, setEdges] = useState<any[]>([])
 
   // 更新canvas尺寸
   useEffect(() => {
@@ -40,47 +41,30 @@ const NetworkGraph: React.FC = () => {
     return () => window.removeEventListener('resize', updateDimensions)
   }, [])
 
-  // 处理网络数据
-  useEffect(() => {
-    if (!networkData) return
-
-    // 过滤节点
-    const filteredNodes = networkData.nodes.filter(node => {
-      if (filters.yearRange && node.year) {
-        return node.year >= filters.yearRange[0] && node.year <= filters.yearRange[1]
-      }
-      return true
-    })
-
-    // 布局算法（简化的力导向布局）
-    const layoutNodes = filteredNodes.map((node, index) => {
-      const angle = (index / filteredNodes.length) * 2 * Math.PI
-      const radius = node.isRoot ? 50 : 150 + (index % 3) * 100
-      const centerX = dimensions.width / 2
-      const centerY = dimensions.height / 2
-      
-      return {
-        ...node,
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius,
-        size: Math.max(15, Math.min(40, node.size))
-      }
-    })
-
-    // 过滤边
-    const filteredEdges = networkData.edges.filter(edge => 
-      filteredNodes.some(n => n.id === edge.from) && 
-      filteredNodes.some(n => n.id === edge.to)
+  // 过滤年份（保留原行为）
+  const filteredNodes: NetworkNode[] = useMemo(() => {
+    if (!networkData) return []
+    return networkData.nodes.filter((node) =>
+      !filters.yearRange || !node.year || (node.year >= filters.yearRange[0] && node.year <= filters.yearRange[1]),
     )
+  }, [networkData, filters.yearRange])
 
-    setNodes(layoutNodes)
-    setEdges(filteredEdges)
-  }, [networkData, filters, dimensions])
+  const nodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
+
+  const filteredEdges: NetworkEdge[] = useMemo(
+    () => (networkData ? networkData.edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to)) : []),
+    [networkData, nodeIds],
+  )
+
+  const positions = useLayout(filteredNodes, filteredEdges, dimensions.width, dimensions.height)
+
+  // O(1) 查找，取代逐边线性查找
+  const nodeById = useMemo(() => new Map(positions.map((n) => [n.id, n])), [positions])
 
   // 绘制网络
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || nodes.length === 0) return
+    if (!canvas || positions.length === 0) return
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
@@ -95,27 +79,29 @@ const NetworkGraph: React.FC = () => {
     ctx.scale(zoom, zoom)
 
     // 绘制边
-    edges.forEach(edge => {
-      const fromNode = nodes.find(n => n.id === edge.from)
-      const toNode = nodes.find(n => n.id === edge.to)
-      
+    filteredEdges.forEach(edge => {
+      const fromNode = nodeById.get(edge.from)
+      const toNode = nodeById.get(edge.to)
+
       if (fromNode && toNode) {
+        const dim = highlightedNodes.length > 0 && !highlightedNodes.includes(edge.from) && !highlightedNodes.includes(edge.to)
+        ctx.globalAlpha = dim ? 0.08 : Math.max(0.3, edge.weight)
+
         ctx.beginPath()
         ctx.moveTo(fromNode.x, fromNode.y)
         ctx.lineTo(toNode.x, toNode.y)
         ctx.strokeStyle = edge.type === 'citation' ? '#4ade80' : '#60a5fa'
         ctx.lineWidth = Math.max(1, edge.weight * 2)
-        ctx.globalAlpha = Math.max(0.3, edge.weight)
         ctx.stroke()
-        
+
         // 绘制箭头
         const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x)
         const arrowLength = 15
         const arrowAngle = Math.PI / 6
-        
+
         const endX = toNode.x - Math.cos(angle) * toNode.size
         const endY = toNode.y - Math.sin(angle) * toNode.size
-        
+
         ctx.beginPath()
         ctx.moveTo(endX, endY)
         ctx.lineTo(
@@ -132,20 +118,21 @@ const NetworkGraph: React.FC = () => {
     })
 
     // 绘制节点
-    nodes.forEach(node => {
-      ctx.globalAlpha = 1
-      
+    positions.forEach(node => {
+      const nodeDim = highlightedNodes.length > 0 && !highlightedNodes.includes(node.id)
+      ctx.globalAlpha = nodeDim ? 0.15 : 1
+
       // 节点主体
       ctx.beginPath()
       ctx.arc(node.x, node.y, node.size, 0, 2 * Math.PI)
       ctx.fillStyle = node.color
       ctx.fill()
-      
+
       // 节点边框
       ctx.strokeStyle = node.isRoot ? '#ff6b35' : '#ffffff'
       ctx.lineWidth = node.isRoot ? 3 : 1
       ctx.stroke()
-      
+
       // 高亮效果
       if (selectedNodeId === node.id) {
         ctx.beginPath()
@@ -154,21 +141,22 @@ const NetworkGraph: React.FC = () => {
         ctx.lineWidth = 3
         ctx.stroke()
       }
-      
+
       // 节点标签
       if (zoom > 0.5) {
         ctx.fillStyle = '#ffffff'
         ctx.font = `${Math.max(10, 12 * zoom)}px Inter, sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        
-        const label = node.title.length > 20 ? node.title.substring(0, 20) + '...' : node.title
+
+        const rawLabel = node.title || node.label || ''
+        const label = rawLabel.length > 20 ? rawLabel.substring(0, 20) + '...' : rawLabel
         ctx.fillText(label, node.x, node.y + node.size + 15)
       }
     })
 
     ctx.restore()
-  }, [nodes, edges, dimensions, zoom, offset, selectedNodeId])
+  }, [positions, filteredEdges, nodeById, dimensions, zoom, offset, selectedNodeId, highlightedNodes])
 
   // 鼠标事件处理
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -179,7 +167,7 @@ const NetworkGraph: React.FC = () => {
     const y = (e.clientY - rect.top - offset.y) / zoom
 
     // 检查是否点击了节点
-    const clickedNode = nodes.find(node => {
+    const clickedNode = positions.find(node => {
       const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2)
       return distance <= node.size
     })
@@ -187,7 +175,7 @@ const NetworkGraph: React.FC = () => {
     if (clickedNode) {
       setSelectedNodeId(clickedNode.id)
       // 高亮相邻节点
-      const connectedNodes = edges
+      const connectedNodes = filteredEdges
         .filter(edge => edge.from === clickedNode.id || edge.to === clickedNode.id)
         .map(edge => edge.from === clickedNode.id ? edge.to : edge.from)
       setHighlightedNodes([clickedNode.id, ...connectedNodes])
@@ -341,7 +329,7 @@ const NetworkGraph: React.FC = () => {
       {/* 网络信息 */}
       <div className="absolute bottom-4 left-4 bg-gray-800 bg-opacity-90 rounded-lg px-3 py-2">
         <div className="text-sm text-white">
-          {nodes.length} 节点 · {edges.length} 边 · 缩放: {(zoom * 100).toFixed(0)}%
+          {positions.length} 节点 · {filteredEdges.length} 边 · 缩放: {(zoom * 100).toFixed(0)}%
         </div>
       </div>
 
