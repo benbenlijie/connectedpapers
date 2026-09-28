@@ -1,9 +1,12 @@
 import React, { useState } from 'react'
 import { Filter, X, ChevronDown, ChevronUp } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
+import { useUiStore } from '../store/useUiStore'
+import { useSearchPapers } from '../hooks/useSearchPapers'
 
 const FilterPanel: React.FC = () => {
-  const { filters, updateFilters, resetFilters, searchResults } = useAppStore()
+  const { filters, updateFilters, resetFilters, submittedQuery } = useUiStore()
+  const { data } = useSearchPapers(submittedQuery)
+  const searchResults = data?.papers ?? []
   const [isExpanded, setIsExpanded] = useState(false)
 
   // 从搜索结果中提取可用的过滤选项

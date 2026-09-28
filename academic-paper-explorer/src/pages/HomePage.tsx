@@ -4,10 +4,12 @@ import PaperList from '../components/PaperList'
 import NetworkGraph from '../components/NetworkGraph'
 import DetailsPanel from '../components/DetailsPanel'
 import FilterPanel from '../components/FilterPanel'
-import { useAppStore } from '../store/useAppStore'
+import { useUiStore } from '../store/useUiStore'
+import { usePaperNetwork } from '../hooks/usePaperNetwork'
 
 const HomePage: React.FC = () => {
-  const { selectedPaper, networkData } = useAppStore()
+  const { selectedPaper } = useUiStore()
+  const { data: networkData } = usePaperNetwork(selectedPaper)
 
   return (
     <div className="h-screen flex flex-col">

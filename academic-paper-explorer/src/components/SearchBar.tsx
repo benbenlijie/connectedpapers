@@ -1,35 +1,20 @@
 import React, { useState } from 'react'
 import { Search, Loader2 } from 'lucide-react'
-import { useAppStore } from '../store/useAppStore'
-import { useSearchPapers } from '../hooks/useApiQueries'
+import { useUiStore } from '../store/useUiStore'
+import { useSearchPapers } from '../hooks/useSearchPapers'
 
 const SearchBar: React.FC = () => {
-  const {
-    searchQuery,
-    searchType,
-    isSearching,
-    setSearchQuery,
-    setSearchType,
-    setIsSearching,
-    setSearchResults
-  } = useAppStore()
+  const { submittedQuery, submitQuery } = useUiStore()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchType, setSearchType] = useState<'keyword' | 'doi' | 'arxiv' | 's2_id'>('keyword')
 
-  const searchMutation = useSearchPapers()
+  const { isFetching: isSearching } = useSearchPapers(submittedQuery)
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
 
-    setIsSearching(true)
-    try {
-      const result = await searchMutation.mutateAsync({
-        query: searchQuery,
-        query_type: searchType
-      })
-      setSearchResults(result.papers)
-    } finally {
-      setIsSearching(false)
-    }
+    submitQuery({ query: searchQuery, query_type: searchType })
   }
 
   const searchTypeOptions = [
