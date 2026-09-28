@@ -2,7 +2,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "server": "bun run server/main.ts",
+    "server": "bun --env-file=server/.env run server/main.ts",
     "test:server": "bun test server/",
     "dev:web": "pnpm --dir academic-paper-explorer dev",
     "build:web": "pnpm --dir academic-paper-explorer build"

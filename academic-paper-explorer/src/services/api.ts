@@ -14,6 +14,7 @@ const MESSAGES: Record<string, string> = {
   PAPER_FETCH_FAILED: '无法从数据源获取论文，可能受速率限制，请稍后重试',
   MISSING_PAPER_ID: '论文ID缺失，请选择有效的论文',
   RATE_LIMITED: 'API请求过于频繁，请稍后重试',
+  UPSTREAM_FAILED: '上游数据源暂时不可用或已限流，请稍后重试',
   NETWORK_BUILD_FAILED: '网络构建失败，请重试',
   JOB_NOT_FOUND: '任务不存在或已过期',
 }
@@ -55,8 +56,9 @@ async function networkWithPolling(paperId: string, depth: number, maxNodes: numb
 }
 
 export const api = {
-  async search(query: string, query_type: string): Promise<{ papers: Paper[]; total_count: number }> {
-    return searchResponseSchema.parse(await request('/search', { query, query_type })).data as any
+  async search(query: string, query_type: string): Promise<{ papers: Paper[]; total_count: number; warning?: string }> {
+    const parsed = searchResponseSchema.parse(await request('/search', { query, query_type }))
+    return { ...(parsed.data as any), warning: parsed.warning ?? undefined }
   },
   async details(paperId: string): Promise<PaperDetails> {
     return detailsResponseSchema.parse(await request('/details', { paper_id: paperId })).data as any

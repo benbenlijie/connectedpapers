@@ -41,6 +41,21 @@ export function getPaper(s2Path: string): Promise<S2Paper> {
     { retries: 3, baseDelayMs: 1200 })
 }
 
+const SEARCH_FIELDS =
+  'paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,externalIds'
+
+/** 关键词搜索。对 429/5xx 退避重试；重试耗尽后抛出（携带 status）。 */
+export function searchPapers(query: string): Promise<S2Paper[]> {
+  return withRetry(async () => {
+    const res = await fetch(
+      `${config.s2.base}/paper/search?query=${encodeURIComponent(query)}&limit=20&fields=${SEARCH_FIELDS}`,
+      { headers: headers(), signal: AbortSignal.timeout(15000) },
+    )
+    if (!res.ok) throw Object.assign(new Error(`S2 search ${res.status} ${res.statusText}`), { status: res.status })
+    return (await res.json()).data ?? []
+  }, { retries: 3, baseDelayMs: 1200 })
+}
+
 /** 一次最多 500 个 id，返回与入参同序的数组（缺失为 null）。 */
 export function getPapersBatch(s2Paths: string[]): Promise<(S2Paper | null)[]> {
   return withRetry(async () => {

@@ -1,16 +1,31 @@
 import { config } from './config'
+import { withRetry } from './retry'
 
 const ua = () => `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`
+// OpenAlex “polite pool”：带上 mailto 可获更高、更稳定的限速。
+const mailto = () => encodeURIComponent(config.s2.contactEmail)
 
-export async function searchOpenAlex(query: string): Promise<any[]> {
-  const url = `${config.openalex.base}/works?search=${encodeURIComponent(query)}&per_page=20&select=id,title,abstract_inverted_index,publication_year,cited_by_count,authorships,primary_location,publication_date,concepts,open_access,doi`
-  const res = await fetch(url, { headers: { 'User-Agent': ua() } })
-  if (!res.ok) return []
-  return (await res.json()).results ?? []
+const WORK_SELECT =
+  'id,title,abstract_inverted_index,publication_year,cited_by_count,authorships,primary_location,publication_date,concepts,open_access,doi'
+
+export function buildWorkSearchUrl(query: string): string {
+  return `${config.openalex.base}/works?search=${encodeURIComponent(query)}&per_page=20&select=${WORK_SELECT}&mailto=${mailto()}`
+}
+
+/** 搜索 works。对 429/5xx 退避重试；重试耗尽后抛出（携带 status），由调用方决定降级。 */
+export function searchOpenAlex(query: string): Promise<any[]> {
+  return withRetry(async () => {
+    const res = await fetch(buildWorkSearchUrl(query), {
+      headers: { 'User-Agent': ua() },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) throw Object.assign(new Error(`OpenAlex ${res.status} ${res.statusText}`), { status: res.status })
+    return (await res.json()).results ?? []
+  }, { retries: 3, baseDelayMs: 1000 })
 }
 
 export async function getByDoi(doi: string): Promise<any | null> {
-  const res = await fetch(`${config.openalex.base}/works/doi:${doi}?select=id,title,abstract_inverted_index,publication_year,cited_by_count,authorships,primary_location,concepts,open_access`, { headers: { 'User-Agent': ua() } })
+  const res = await fetch(`${config.openalex.base}/works/doi:${doi}?select=${WORK_SELECT}&mailto=${mailto()}`, { headers: { 'User-Agent': ua() } })
   if (!res.ok) return null
   return res.json()
 }
@@ -20,7 +35,7 @@ export async function getWorkByOpenAlexId(
 ): Promise<{ doi?: string; title?: string; arxivId?: string } | null> {
   const m = String(id).match(/(W\d+)/)
   if (!m) return null
-  const url = `${config.openalex.base}/works/${m[1]}?select=id,doi,title,ids,primary_location`
+  const url = `${config.openalex.base}/works/${m[1]}?select=id,doi,title,ids,primary_location&mailto=${mailto()}`
   const res = await fetch(url, { headers: { 'User-Agent': ua() } })
   if (!res.ok) return null
   const w = (await res.json()) as any

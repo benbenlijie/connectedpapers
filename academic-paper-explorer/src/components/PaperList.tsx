@@ -14,6 +14,7 @@ const PaperList: React.FC = () => {
 
   const { data, isFetching, error, refetch } = useSearchPapers(submittedQuery)
   const searchResults = data?.papers ?? []
+  const searchWarning = data?.warning
 
   // 应用过滤器
   const filteredResults = searchResults.filter(paper => {
@@ -126,6 +127,13 @@ const PaperList: React.FC = () => {
             )}
           </span>
         </div>
+
+        {searchWarning && (
+          <div className="mb-3 flex items-start space-x-2 rounded-lg bg-yellow-900/30 border border-yellow-700/50 px-3 py-2">
+            <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+            <span className="text-xs text-yellow-300">{searchWarning}</span>
+          </div>
+        )}
         
         <div className="space-y-3">
           {filteredResults.map((paper) => (

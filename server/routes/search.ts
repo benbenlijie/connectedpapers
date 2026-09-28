@@ -1,23 +1,11 @@
 import { readJson, json, ApiError } from '../errors'
 import { searchOpenAlex } from '../openalex'
-import { getPaper } from '../s2'
+import { getPaper, searchPapers } from '../s2'
 import { toS2Input } from '../resolve'
 import { normalizeS2Paper } from '../normalize'
 import { logSearch } from '../db-queries'
-import { config } from '../config'
 
 interface Body { query: string; query_type?: 'keyword' | 'doi' | 'arxiv' | 's2_id' }
-
-function s2Headers(): Record<string, string> {
-  const h: Record<string, string> = {
-    'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`,
-  }
-  if (config.s2.apiKey) h['x-api-key'] = config.s2.apiKey
-  return h
-}
-
-const S2_SEARCH_FIELDS =
-  'paperId,title,abstract,year,citationCount,authors,venue,publicationDate,fieldsOfStudy,url,openAccessPdf,externalIds'
 
 export async function searchRoute(req: Request): Promise<Response> {
   const started = Date.now()
@@ -25,16 +13,20 @@ export async function searchRoute(req: Request): Promise<Response> {
   if (typeof query !== 'string' || !query.trim()) throw new ApiError('VALIDATION_FAILED', '查询内容不能为空')
 
   let papers: any[] = []
+  let warning: string | undefined
   if (query_type === 'keyword') {
-    const [s2Result, oaResult] = await Promise.allSettled([
-      fetch(`${config.s2.base}/paper/search?query=${encodeURIComponent(query)}&limit=20&fields=${S2_SEARCH_FIELDS}`, {
-        headers: s2Headers(),
-      }).then((r) => (r.ok ? r.json() : { data: [] })).then((j) => j.data ?? []),
-      searchOpenAlex(query),
-    ])
+    const [s2Result, oaResult] = await Promise.allSettled([searchPapers(query), searchOpenAlex(query)])
     const s2 = s2Result.status === 'fulfilled' ? s2Result.value : []
     const oa = oaResult.status === 'fulfilled' ? oaResult.value : []
     papers = [...s2.map(normalizeS2), ...oa.map(normalizeOa)]
+
+    const s2Failed = s2Result.status === 'rejected'
+    const oaFailed = oaResult.status === 'rejected'
+    if (s2Failed && oaFailed) {
+      console.error('搜索上游全部失败:', (s2Result as PromiseRejectedResult).reason?.message, (oaResult as PromiseRejectedResult).reason?.message)
+      throw new ApiError('UPSTREAM_FAILED', '上游数据源（Semantic Scholar / OpenAlex）暂时不可用或已限流，请稍后重试；配置 SEMANTIC_SCHOLAR_API_KEY 可提升稳定性', 502)
+    }
+    if (s2Failed || oaFailed) warning = `${s2Failed ? 'Semantic Scholar' : 'OpenAlex'} 暂时限流，结果可能不完整`
   } else {
     let p: any
     try {
@@ -49,7 +41,7 @@ export async function searchRoute(req: Request): Promise<Response> {
 
   const deduped = dedupe(papers)
   logSearch(query, query_type, deduped.length, Date.now() - started)
-  return json({ data: { papers: deduped.slice(0, 50), total_count: deduped.length, query_type } })
+  return json({ data: { papers: deduped.slice(0, 50), total_count: deduped.length, query_type }, ...(warning ? { warning } : {}) })
 }
 
 function normalizeS2(p: any) {
