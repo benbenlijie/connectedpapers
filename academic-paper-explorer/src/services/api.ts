@@ -41,11 +41,14 @@ async function networkWithPolling(paperId: string, depth: number, maxNodes: numb
   const res = await request('/network', { paper_id: paperId, depth, max_nodes: maxNodes })
   if (res.data) return networkDataSchema.parse(res.data) as NetworkData
   const jobId: string = res.job_id
-  const deadline = Date.now() + 90_000
+  const deadline = Date.now() + 180_000
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 1500))
     const job = jobStatusSchema.parse(await request(`/jobs/${jobId}`))
-    if (job.status === 'done' && job.data) return job.data as NetworkData
+    if (job.status === 'done') {
+      if (job.data) return job.data as NetworkData
+      throw new Error('网络结果已过期，请重试')
+    }
     if (job.status === 'failed') throw new Error(job.error ?? '网络构建失败')
   }
   throw new Error('网络构建超时')
