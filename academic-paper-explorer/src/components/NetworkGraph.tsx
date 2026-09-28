@@ -18,17 +18,19 @@ const NetworkGraph: React.FC = () => {
   const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
 
-  // 更新canvas尺寸
+  // 更新canvas尺寸：首次立即测量，窗口 resize 时防抖 (~120ms) 只重排一次
   useEffect(() => {
-    const updateDimensions = () => {
-      if (canvasRef.current?.parentElement) {
-        const parent = canvasRef.current.parentElement
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const measure = () => {
+      const parent = canvasRef.current?.parentElement
+      if (parent) {
         setDimensions({
           width: parent.clientWidth,
           height: parent.clientHeight
@@ -36,10 +38,18 @@ const NetworkGraph: React.FC = () => {
       }
     }
 
-    updateDimensions()
-    window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
-  }, [])
+    const scheduleMeasure = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(measure, 120)
+    }
+
+    measure()
+    window.addEventListener('resize', scheduleMeasure)
+    return () => {
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('resize', scheduleMeasure)
+    }
+  }, [networkData])
 
   // 过滤年份（保留原行为）
   const filteredNodes: NetworkNode[] = useMemo(() => {
@@ -56,7 +66,12 @@ const NetworkGraph: React.FC = () => {
     [networkData, nodeIds],
   )
 
-  const positions = useLayout(filteredNodes, filteredEdges, dimensions.width, dimensions.height)
+  const positions = useLayout(
+    filteredNodes,
+    filteredEdges,
+    dimensions?.width ?? null,
+    dimensions?.height ?? null,
+  )
 
   // O(1) 查找，取代逐边线性查找
   const nodeById = useMemo(() => new Map(positions.map((n) => [n.id, n])), [positions])
@@ -64,14 +79,16 @@ const NetworkGraph: React.FC = () => {
   // 绘制网络
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || positions.length === 0) return
+    if (!canvas || !dimensions) return
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // 清空画布
+    // 清空画布（空图时也清空，避免残留上一帧）
     ctx.fillStyle = '#111827'
     ctx.fillRect(0, 0, dimensions.width, dimensions.height)
+
+    if (positions.length === 0) return
 
     // 应用变换
     ctx.save()
@@ -281,8 +298,8 @@ const NetworkGraph: React.FC = () => {
       {/* 网络画布 */}
       <canvas
         ref={canvasRef}
-        width={dimensions.width}
-        height={dimensions.height}
+        width={dimensions?.width ?? 0}
+        height={dimensions?.height ?? 0}
         className="cursor-crosshair"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
