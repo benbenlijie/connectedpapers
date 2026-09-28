@@ -49,7 +49,10 @@ export function pagerank(nodes: GraphNode[], edges: GraphEdge[], damping = 0.85,
       const links = out.get(node.id)!
       if (!links.length) { dangling += pr.get(node.id) ?? 0; continue }
       const share = (damping * (pr.get(node.id) ?? 0)) / links.length
-      for (const t of links) next.set(t, (next.get(t) ?? 0) + share)
+      for (const t of links) {
+        if (next.has(t)) next.set(t, next.get(t)! + share)
+        else dangling += (pr.get(node.id) ?? 0) / links.length
+      }
     }
     // 悬挂节点（无出链）的质量按标准 PageRank 均摊，保证总和恒为 1。
     const dShare = (damping * dangling) / n
@@ -127,7 +130,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     const nextFrontier: S2Paper[] = []
     fetched.forEach((p, i) => {
       if (!p || nodes.size >= maxNodes) return
-      seen.add(wanted[i])
+      seen.add(p.paperId)
       nodes.set(p.paperId, toNode(p, false, level + 1))
       upsertPaper(p)
       nextFrontier.push(p)
