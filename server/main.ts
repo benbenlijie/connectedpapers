@@ -27,12 +27,12 @@ const server = Bun.serve({
     const p = url.pathname
     try {
       if (req.method === 'OPTIONS') return new Response(null, { status: 204 })
-      if (p === '/api/search' && req.method === 'POST') return searchRoute(req)
-      if (p === '/api/details' && req.method === 'POST') return detailsRoute(req)
-      if (p === '/api/network' && req.method === 'POST') return networkRoute(req)
-      if (p.startsWith('/api/jobs/') && req.method === 'GET') return jobRoute(req, p.split('/').pop()!)
+      if (p === '/api/search' && req.method === 'POST') return await searchRoute(req)
+      if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
+      if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
+      if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
       if (p.startsWith('/api/')) throw new ApiError('VALIDATION_FAILED', `未知接口: ${p}`, 404)
-      return serveStatic(p)
+      return await serveStatic(p)
     } catch (e) {
       return handleError(e)
     }
