@@ -3,6 +3,7 @@ import { cn } from './utils'
 
 describe('cn', () => {
   it('joins truthy classes', () => {
-    expect(cn('a', false && 'b', 'c')).toBe('a c')
+    const maybe: string | undefined = undefined
+    expect(cn('a', maybe && 'b', 'c')).toBe('a c')
   })
 })
