@@ -2,7 +2,7 @@ import React from 'react'
 import { FileText, ExternalLink, Calendar, Quote, Users } from 'lucide-react'
 import { useAppStore } from '../store/useAppStore'
 import { useFetchPaperNetwork } from '../hooks/useApiQueries'
-import { Paper } from '../lib/supabase'
+import { Paper } from '../types/domain'
 
 const PaperList: React.FC = () => {
   const {
