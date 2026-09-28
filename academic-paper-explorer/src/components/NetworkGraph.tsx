@@ -1,251 +1,233 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ForceGraph2D from 'react-force-graph-2d'
+import { Loader2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
-import { useLayout } from '../graph/useLayout'
-import type { NetworkEdge, NetworkNode } from '../types/domain'
+import { filterGraph } from '../graph/graphFilters'
+import { graphAdapter, linkEndId, type GraphLink, type GraphNode } from '../graph/graphAdapter'
+import { withAlpha } from '../graph/encoding'
+import GraphToolbar from './graph/GraphToolbar'
+import GraphLegend from './graph/GraphLegend'
+import GraphTimeline from './graph/GraphTimeline'
+import GraphMinimap from './graph/GraphMinimap'
+import GraphTooltip from './graph/GraphTooltip'
+import type { Paper } from '../types/domain'
+
+const ForceGraph3D = React.lazy(() => import('../graph/ForceGraph3DLazy'))
 
 const NetworkGraph: React.FC = () => {
   const {
     selectedPaper,
     selectedNodeId,
     setSelectedNodeId,
-    highlightedNodes,
-    setHighlightedNodes,
-    filters
+    setSelectedPaper,
+    filters,
+    graphView,
+    colorMode,
+    sizeMode,
+    timelineYear,
+    graphQuery,
   } = useUiStore()
 
   const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const fg2dRef = useRef<any>(null)
+  const fg3dRef = useRef<any>(null)
+  const lastClick = useRef<{ id: string; t: number } | null>(null)
+
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
-  const [zoom, setZoom] = useState(1)
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null)
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
+  const [engineTick, setEngineTick] = useState(0)
 
-  // 更新canvas尺寸：首次立即测量，窗口 resize 时防抖 (~120ms) 只重排一次
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const measure = () => {
-      const parent = canvasRef.current?.parentElement
-      if (parent) {
-        setDimensions({
-          width: parent.clientWidth,
-          height: parent.clientHeight
-        })
-      }
-    }
-
-    const scheduleMeasure = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(measure, 120)
-    }
-
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setDimensions({ width: el.clientWidth, height: el.clientHeight })
     measure()
-    window.addEventListener('resize', scheduleMeasure)
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    ro?.observe(el)
+    window.addEventListener('resize', measure)
     return () => {
-      if (timer) clearTimeout(timer)
-      window.removeEventListener('resize', scheduleMeasure)
+      ro?.disconnect()
+      window.removeEventListener('resize', measure)
     }
-  }, [networkData])
+  }, [])
 
-  // 过滤年份（保留原行为）
-  const filteredNodes: NetworkNode[] = useMemo(() => {
-    if (!networkData) return []
-    return networkData.nodes.filter((node) =>
-      !filters.yearRange || !node.year || (node.year >= filters.yearRange[0] && node.year <= filters.yearRange[1]),
-    )
-  }, [networkData, filters.yearRange])
-
-  const nodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
-
-  const filteredEdges: NetworkEdge[] = useMemo(
-    () => (networkData ? networkData.edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to)) : []),
-    [networkData, nodeIds],
-  )
-
-  const positions = useLayout(
-    filteredNodes,
-    filteredEdges,
-    dimensions?.width ?? null,
-    dimensions?.height ?? null,
-  )
-
-  // O(1) 查找，取代逐边线性查找
-  const nodeById = useMemo(() => new Map(positions.map((n) => [n.id, n])), [positions])
-
-  // 绘制网络
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !dimensions) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // 清空画布（空图时也清空，避免残留上一帧）
-    ctx.fillStyle = '#111827'
-    ctx.fillRect(0, 0, dimensions.width, dimensions.height)
-
-    if (positions.length === 0) return
-
-    // 应用变换
-    ctx.save()
-    ctx.translate(offset.x, offset.y)
-    ctx.scale(zoom, zoom)
-
-    // 绘制边
-    filteredEdges.forEach(edge => {
-      const fromNode = nodeById.get(edge.from)
-      const toNode = nodeById.get(edge.to)
-
-      if (fromNode && toNode) {
-        const dim = highlightedNodes.length > 0 && !highlightedNodes.includes(edge.from) && !highlightedNodes.includes(edge.to)
-        ctx.globalAlpha = dim ? 0.08 : Math.max(0.3, edge.weight)
-
-        ctx.beginPath()
-        ctx.moveTo(fromNode.x, fromNode.y)
-        ctx.lineTo(toNode.x, toNode.y)
-        ctx.strokeStyle = edge.type === 'citation' ? '#4ade80' : '#60a5fa'
-        ctx.lineWidth = Math.max(1, edge.weight * 2)
-        ctx.stroke()
-
-        // 绘制箭头
-        const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x)
-        const arrowLength = 15
-        const arrowAngle = Math.PI / 6
-
-        const endX = toNode.x - Math.cos(angle) * toNode.size
-        const endY = toNode.y - Math.sin(angle) * toNode.size
-
-        ctx.beginPath()
-        ctx.moveTo(endX, endY)
-        ctx.lineTo(
-          endX - arrowLength * Math.cos(angle - arrowAngle),
-          endY - arrowLength * Math.sin(angle - arrowAngle)
-        )
-        ctx.moveTo(endX, endY)
-        ctx.lineTo(
-          endX - arrowLength * Math.cos(angle + arrowAngle),
-          endY - arrowLength * Math.sin(angle + arrowAngle)
-        )
-        ctx.stroke()
-      }
+  const { nodes: filteredNodes, edges: filteredEdges } = useMemo(() => {
+    if (!networkData) return { nodes: [], edges: [] }
+    return filterGraph(networkData.nodes, networkData.edges, {
+      yearRange: filters.yearRange,
+      minCitations: filters.minCitations,
+      selectedFields: filters.selectedFields,
+      selectedVenues: filters.selectedVenues,
+      timelineYear,
     })
+  }, [networkData, filters, timelineYear])
 
-    // 绘制节点
-    positions.forEach(node => {
-      const nodeDim = highlightedNodes.length > 0 && !highlightedNodes.includes(node.id)
-      ctx.globalAlpha = nodeDim ? 0.15 : 1
+  const graphData = useMemo(
+    () => graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode }),
+    [filteredNodes, filteredEdges, colorMode, sizeMode],
+  )
 
-      // 节点主体
+  const activeId = hoverNode?.id ?? selectedNodeId ?? null
+
+  const { neighborIds, linkKeys } = useMemo(() => {
+    const nIds = new Set<string>()
+    const lKeys = new Set<string>()
+    if (!activeId) return { neighborIds: nIds, linkKeys: lKeys }
+    nIds.add(activeId)
+    for (const link of graphData.links) {
+      const s = linkEndId(link.source)
+      const t = linkEndId(link.target)
+      if (s === activeId || t === activeId) {
+        nIds.add(s)
+        nIds.add(t)
+        lKeys.add(`${s}->${t}`)
+      }
+    }
+    return { neighborIds: nIds, linkKeys: lKeys }
+  }, [activeId, graphData])
+
+  const rebuildFromNode = useCallback(
+    (node: GraphNode) => {
+      const paper: Paper = {
+        id: node.id,
+        title: node.title,
+        authors: node.authors,
+        publication_year: node.year,
+        year: node.year,
+        citation_count: node.citationCount,
+        abstract: node.abstract,
+        venue: node.venue,
+        url: node.url,
+        pdf_url: node.pdfUrl,
+        fields_of_study: node.fieldsOfStudy,
+        source: 'semantic_scholar',
+      }
+      setSelectedPaper(paper)
+      setSelectedNodeId(null)
+    },
+    [setSelectedPaper, setSelectedNodeId],
+  )
+
+  const handleNodeClick = useCallback(
+    (node: GraphNode) => {
+      const now = Date.now()
+      const prev = lastClick.current
+      if (prev && prev.id === node.id && now - prev.t < 320) {
+        lastClick.current = null
+        rebuildFromNode(node)
+        return
+      }
+      lastClick.current = { id: node.id, t: now }
+      setSelectedNodeId(node.id)
+    },
+    [rebuildFromNode, setSelectedNodeId],
+  )
+
+  const paintNode = useCallback(
+    (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const x = node.x ?? 0
+      const y = node.y ?? 0
+      const dim = activeId !== null && !neighborIds.has(node.id)
+      ctx.globalAlpha = dim ? 0.15 : 1
       ctx.beginPath()
-      ctx.arc(node.x, node.y, node.size, 0, 2 * Math.PI)
+      ctx.arc(x, y, node.size, 0, 2 * Math.PI)
       ctx.fillStyle = node.color
       ctx.fill()
-
-      // 节点边框
-      ctx.strokeStyle = node.isRoot ? '#ff6b35' : '#ffffff'
-      ctx.lineWidth = node.isRoot ? 3 : 1
+      ctx.lineWidth = (node.isRoot ? 3 : selectedNodeId === node.id ? 2.5 : 1) / globalScale
+      ctx.strokeStyle = node.isRoot ? '#ff6b35' : selectedNodeId === node.id ? '#ffd700' : 'rgba(255,255,255,0.55)'
       ctx.stroke()
-
-      // 高亮效果
-      if (selectedNodeId === node.id) {
-        ctx.beginPath()
-        ctx.arc(node.x, node.y, node.size + 5, 0, 2 * Math.PI)
-        ctx.strokeStyle = '#ffd700'
-        ctx.lineWidth = 3
-        ctx.stroke()
-      }
-
-      // 节点标签
-      if (zoom > 0.5) {
-        ctx.fillStyle = '#ffffff'
-        ctx.font = `${Math.max(10, 12 * zoom)}px Inter, sans-serif`
+      if (globalScale > 0.55) {
+        const raw = node.title || node.label || ''
+        const label = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw
+        ctx.font = `${12 / globalScale}px Inter, sans-serif`
         ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-
-        const rawLabel = node.title || node.label || ''
-        const label = rawLabel.length > 20 ? rawLabel.substring(0, 20) + '...' : rawLabel
-        ctx.fillText(label, node.x, node.y + node.size + 15)
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'
+        ctx.fillText(label, x, y + node.size + 2 / globalScale)
       }
-    })
+      ctx.globalAlpha = 1
+    },
+    [activeId, neighborIds, selectedNodeId],
+  )
 
-    ctx.restore()
-  }, [positions, filteredEdges, nodeById, dimensions, zoom, offset, selectedNodeId, highlightedNodes])
+  const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(node.x ?? 0, node.y ?? 0, node.size + 3, 0, 2 * Math.PI)
+    ctx.fill()
+  }, [])
 
-  // 鼠标事件处理
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return
+  const linkColor = useCallback(
+    (link: GraphLink) => {
+      const base = link.type === 'citation' ? '#4ade80' : '#60a5fa'
+      if (!activeId) return withAlpha(base, 0.35)
+      const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
+      return linkKeys.has(key) ? base : withAlpha(base, 0.06)
+    },
+    [activeId, linkKeys],
+  )
 
-    const x = (e.clientX - rect.left - offset.x) / zoom
-    const y = (e.clientY - rect.top - offset.y) / zoom
+  const nodeColor = useCallback(
+    (node: GraphNode) => {
+      if (!activeId) return node.color
+      return neighborIds.has(node.id) ? node.color : '#2a2f3a'
+    },
+    [activeId, neighborIds],
+  )
 
-    // 检查是否点击了节点
-    const clickedNode = positions.find(node => {
-      const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2)
-      return distance <= node.size
-    })
+  const commonProps = {
+    graphData,
+    backgroundColor: '#111827',
+    nodeColor,
+    nodeVal: (n: GraphNode) => n.val,
+    linkColor,
+    linkWidth: (l: GraphLink) => Math.max(0.5, l.weight * 1.5),
+    linkDirectionalArrowLength: 4,
+    linkDirectionalArrowRelPos: 0.9,
+    linkDirectionalArrowColor: linkColor,
+    onNodeClick: handleNodeClick,
+    onNodeHover: (n: GraphNode | null) => setHoverNode(n),
+    onBackgroundClick: () => setSelectedNodeId(null),
+    onEngineStop: () => setEngineTick((v) => v + 1),
+    cooldownTicks: 120,
+    warmupTicks: 20,
+  }
 
-    if (clickedNode) {
-      setSelectedNodeId(clickedNode.id)
-      // 高亮相邻节点
-      const connectedNodes = filteredEdges
-        .filter(edge => edge.from === clickedNode.id || edge.to === clickedNode.id)
-        .map(edge => edge.from === clickedNode.id ? edge.to : edge.from)
-      setHighlightedNodes([clickedNode.id, ...connectedNodes])
+  useEffect(() => {
+    const q = graphQuery.trim().toLowerCase()
+    if (!q) return
+    const target = graphData.nodes.find((n) => (n.title || n.label || '').toLowerCase().includes(q))
+    if (!target || target.x == null || target.y == null) return
+    if (graphView === '3d') {
+      const dist = 160
+      const x = target.x
+      const y = target.y
+      const z = target.z ?? 0
+      const hyp = Math.hypot(x, y, z) || 1
+      const ratio = 1 + dist / hyp
+      fg3dRef.current?.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio || dist }, target, 900)
     } else {
-      setSelectedNodeId(null)
-      setHighlightedNodes([])
-      // 开始拖拽
-      setIsDragging(true)
-      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y })
+      fg2dRef.current?.centerAt(target.x, target.y, 900)
+      fg2dRef.current?.zoom(2.2, 900)
     }
-  }
+  }, [graphQuery, graphData, graphView, engineTick])
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDragging) {
-      setOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      })
-    }
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-  }
-
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setZoom(prev => Math.max(0.1, Math.min(3, prev * delta)))
-  }
-
-  // 控制功能
-  const handleZoomIn = () => setZoom(prev => Math.min(3, prev * 1.2))
-  const handleZoomOut = () => setZoom(prev => Math.max(0.1, prev / 1.2))
-  const handleFit = () => {
-    setZoom(1)
-    setOffset({ x: 0, y: 0 })
-  }
-  const handleReset = () => {
-    setZoom(1)
-    setOffset({ x: 0, y: 0 })
-    setSelectedNodeId(null)
-    setHighlightedNodes([])
-  }
+  const handleMinimapSelect = useCallback((gx: number, gy: number) => {
+    fg2dRef.current?.centerAt(gx, gy, 600)
+  }, [])
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-900">
+      <div className="flex h-full items-center justify-center bg-gray-900">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">正在构建网络图...</h3>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-blue-500" />
+          <h3 className="mb-2 text-lg font-semibold text-white">正在构建网络图...</h3>
           <p className="text-gray-400">正在获取引用关系并计算网络结构</p>
-          <div className="mt-4 text-xs text-gray-500 space-y-1">
+          <div className="mt-4 space-y-1 text-xs text-gray-500">
             <p>• 获取论文引用数据</p>
             <p>• 构建节点和边关系</p>
             <p>• 计算网络布局</p>
@@ -258,12 +240,10 @@ const NetworkGraph: React.FC = () => {
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-900">
+      <div className="flex h-full items-center justify-center bg-gray-900">
         <div className="text-center">
           <p className="text-red-400">网络构建失败</p>
-          <p className="text-gray-400 text-sm mt-2">
-            {(error as Error).message}
-          </p>
+          <p className="mt-2 text-sm text-gray-400">{(error as Error).message}</p>
         </div>
       </div>
     )
@@ -271,7 +251,7 @@ const NetworkGraph: React.FC = () => {
 
   if (!networkData) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-900">
+      <div className="flex h-full items-center justify-center bg-gray-900">
         <div className="text-center">
           <p className="text-gray-400">请选择一篇论文来生成网络图</p>
         </div>
@@ -279,115 +259,73 @@ const NetworkGraph: React.FC = () => {
     )
   }
 
-  // 处理空网络数据或错误数据
   if (!networkData.nodes || networkData.nodes.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-900">
+      <div className="flex h-full items-center justify-center bg-gray-900">
         <div className="text-center">
           <p className="text-yellow-400">网络数据为空</p>
-          <p className="text-gray-400 text-sm mt-2">
-            该论文可能没有可用的引用关系数据
-          </p>
+          <p className="mt-2 text-sm text-gray-400">该论文可能没有可用的引用关系数据</p>
         </div>
       </div>
     )
   }
 
+  const years = filteredNodes
+    .map((n) => n.year)
+    .filter((y): y is number => typeof y === 'number')
+  const minYear = years.length > 0 ? Math.min(...years) : 1990
+  const maxYear = years.length > 0 ? Math.max(...years) : new Date().getFullYear()
+
   return (
-    <div className="relative h-full bg-gray-900">
-      {/* 网络画布 */}
-      <canvas
-        ref={canvasRef}
-        width={dimensions?.width ?? 0}
-        height={dimensions?.height ?? 0}
-        className="cursor-crosshair"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-      />
+    <div
+      ref={containerRef}
+      className="relative h-full bg-gray-900"
+      onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        setPointer({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      }}
+    >
+      {dimensions && graphView === '2d' && (
+        <ForceGraph2D
+          ref={fg2dRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          nodeCanvasObject={paintNode}
+          nodePointerAreaPaint={paintPointerArea}
+          {...commonProps}
+        />
+      )}
 
-      {/* 控制面板 */}
-      <div className="absolute top-4 right-4 bg-gray-800 bg-opacity-90 rounded-lg p-2 space-y-2">
-        <button
-          onClick={handleZoomIn}
-          className="block w-full p-2 text-white hover:bg-gray-700 rounded transition-colors"
-          title="放大"
+      {dimensions && graphView === '3d' && (
+        <React.Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center text-gray-400">正在加载 3D 渲染器…</div>
+          }
         >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        
-        <button
-          onClick={handleZoomOut}
-          className="block w-full p-2 text-white hover:bg-gray-700 rounded transition-colors"
-          title="缩小"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        
-        <button
-          onClick={handleFit}
-          className="block w-full p-2 text-white hover:bg-gray-700 rounded transition-colors"
-          title="适应屏幕"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-        
-        <button
-          onClick={handleReset}
-          className="block w-full p-2 text-white hover:bg-gray-700 rounded transition-colors"
-          title="重置布局"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
+          <ForceGraph3D
+            ref={fg3dRef}
+            width={dimensions.width}
+            height={dimensions.height}
+            linkDirectionalParticles={2}
+            linkDirectionalParticleWidth={1.5}
+            nodeRelSize={4}
+            {...commonProps}
+          />
+        </React.Suspense>
+      )}
+
+      <GraphToolbar />
+      <GraphLegend nodes={graphData.nodes} />
+      <GraphTimeline minYear={minYear} maxYear={maxYear} />
+      {graphView === '2d' && engineTick > 0 && (
+        <GraphMinimap nodes={graphData.nodes} selectedId={selectedNodeId} onSelect={handleMinimapSelect} />
+      )}
+
+      <div className="absolute right-4 top-4 z-10 rounded-lg bg-gray-800/90 px-3 py-2 text-xs text-white">
+        {filteredNodes.length} 节点 · {filteredEdges.length} 边
       </div>
 
-      {/* 网络信息 */}
-      <div className="absolute bottom-4 left-4 bg-gray-800 bg-opacity-90 rounded-lg px-3 py-2">
-        <div className="text-sm text-white">
-          {positions.length} 节点 · {filteredEdges.length} 边 · 缩放: {(zoom * 100).toFixed(0)}%
-        </div>
-      </div>
-
-      {/* 图例 */}
-      <div className="absolute bottom-4 right-4 bg-gray-800 bg-opacity-90 rounded-lg p-3">
-        <div className="text-xs text-white space-y-1">
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-orange-500 rounded-full border-2 border-orange-300"></div>
-            <span>根论文</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-emerald-600 rounded-full"></div>
-            <span>第一层</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-violet-600 rounded-full"></div>
-            <span>第二层</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-red-600 rounded-full"></div>
-            <span>第三层</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-4 h-0.5 bg-green-400"></div>
-            <span>引用关系</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-4 h-0.5 bg-blue-400"></div>
-            <span>参考关系</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 操作提示 */}
-      <div className="absolute top-4 left-4 bg-gray-800 bg-opacity-90 rounded-lg px-3 py-2">
-        <div className="text-xs text-white space-y-1">
-          <div>点击节点：选中论文</div>
-          <div>拖拽：移动视图</div>
-          <div>滚轮：缩放</div>
-        </div>
-      </div>
+      {hoverNode && pointer && <GraphTooltip node={hoverNode} x={pointer.x} y={pointer.y} />}
     </div>
   )
 }

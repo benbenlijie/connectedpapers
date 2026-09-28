@@ -12,7 +12,7 @@ Academic Paper Explorer 是一个学术论文搜索与引用关系网络可视�
 ## 技术栈
 
 - **后端**：Bun 单进程 + `bun:sqlite`（数据库文件 `data/app.db`）。
-- **前端**：React 18 + Vite 6 + TypeScript + TailwindCSS + React Query + Zustand + d3-force。
+- **前端**：React 18 + Vite 6 + TypeScript + TailwindCSS + React Query + Zustand + react-force-graph（2D canvas / 懒加载 3D three.js）。
 - **数据源**：Semantic Scholar、OpenAlex。
 - **测试**：`bun test`（后端）、Vitest（前端）。
 
@@ -20,7 +20,7 @@ Academic Paper Explorer 是一个学术论文搜索与引用关系网络可视�
 
 ```
 connectedpapers/
-├── academic-paper-explorer/   # 前端 React 应用（Vite + React Query + Zustand + d3-force）
+├── academic-paper-explorer/   # 前端 React 应用（Vite + React Query + Zustand + react-force-graph）
 │   ├── src/
 │   └── vite.config.ts         # 开发时把 /api 代理到 http://127.0.0.1:8787
 ├── server/                    # Bun 本地后端
