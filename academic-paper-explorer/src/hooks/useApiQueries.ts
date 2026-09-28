@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, Paper, NetworkData, PaperDetails, SearchQuery } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { Paper, NetworkData, PaperDetails, SearchQuery } from '../types/domain'
 import toast from 'react-hot-toast'
 
 // 搜索论文

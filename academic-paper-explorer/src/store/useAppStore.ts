@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { Paper, NetworkData, PaperDetails } from '../lib/supabase'
+import { Paper, NetworkData, PaperDetails } from '../types/domain'
 
 interface AppState {
   // 搜索状态
