@@ -12,10 +12,10 @@ describe('colorFor', () => {
     expect(colorFor(node({ clusterId: 3 }), 'cluster')).toBe(colorFor(node({ clusterId: 3 }), 'cluster'))
   })
   it('returns gray for missing year', () => {
-    expect(colorFor(node({ year: undefined }), 'year')).toBe('#6b7280')
+    expect(colorFor(node({ year: undefined }), 'year')).toBe('#94a3b8')
   })
   it('returns gray for empty fields', () => {
-    expect(colorFor(node({ fieldsOfStudy: [] }), 'field')).toBe('#6b7280')
+    expect(colorFor(node({ fieldsOfStudy: [] }), 'field')).toBe('#94a3b8')
   })
   it('is stable for the same field', () => {
     expect(colorFor(node({ fieldsOfStudy: ['Physics'] }), 'field')).toBe(
@@ -26,20 +26,20 @@ describe('colorFor', () => {
 
 describe('sizeFor', () => {
   it('clamps zero citations to the minimum radius', () => {
-    expect(sizeFor(node({ citationCount: 0 }), 'citations')).toBe(6)
+    expect(sizeFor(node({ citationCount: 0 }), 'citations')).toBe(5)
   })
   it('clamps huge citation counts to the maximum radius', () => {
-    expect(sizeFor(node({ citationCount: 100000 }), 'citations')).toBe(30)
+    expect(sizeFor(node({ citationCount: 100000 }), 'citations')).toBe(18)
   })
   it('is monotonic in citations', () => {
     expect(sizeFor(node({ citationCount: 100 }), 'citations')).toBeGreaterThan(
       sizeFor(node({ citationCount: 10 }), 'citations'),
     )
   })
-  it('clamps pagerank into [6, 30]', () => {
+  it('clamps pagerank into [5, 18]', () => {
     const v = sizeFor(node({ pageRankScore: 0.5 }), 'pagerank')
-    expect(v).toBeGreaterThanOrEqual(6)
-    expect(v).toBeLessThanOrEqual(30)
+    expect(v).toBeGreaterThanOrEqual(5)
+    expect(v).toBeLessThanOrEqual(18)
   })
 })
 

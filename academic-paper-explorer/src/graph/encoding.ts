@@ -4,26 +4,26 @@ export type ColorMode = 'cluster' | 'year' | 'field'
 export type SizeMode = 'citations' | 'pagerank'
 
 const CLUSTER_PALETTE = [
-  '#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa',
-  '#f87171', '#34d399', '#38bdf8', '#fb923c', '#c084fc',
+  '#22d3ee', '#a3e635', '#fb7185', '#fbbf24', '#818cf8',
+  '#34d399', '#f472b6', '#60a5fa', '#fb923c', '#c084fc',
 ]
 
 const FIELD_PALETTE = [
-  '#818cf8', '#22d3ee', '#facc15', '#f472b6',
-  '#4ade80', '#fb923c', '#a78bfa', '#2dd4bf',
+  '#38bdf8', '#4ade80', '#facc15', '#f472b6',
+  '#a78bfa', '#fb923c', '#2dd4bf', '#e879f9',
 ]
 
 const MIN_YEAR = 1970
-const FALLBACK_COLOR = '#6b7280'
-const MIN_RADIUS = 6
-const MAX_RADIUS = 30
+const FALLBACK_COLOR = '#94a3b8'
+const MIN_RADIUS = 5
+const MAX_RADIUS = 18
 
 export function yearColor(year?: number): string {
   if (!year) return FALLBACK_COLOR
   const maxYear = new Date().getFullYear()
   const t = Math.max(0, Math.min(1, (year - MIN_YEAR) / (maxYear - MIN_YEAR)))
-  const hue = 220 - t * 220
-  return `hsl(${Math.round(hue)}, 70%, 55%)`
+  const hue = 200 - t * 185
+  return `hsl(${Math.round(hue)}, 80%, 60%)`
 }
 
 export function fieldColor(fields?: string[]): string {

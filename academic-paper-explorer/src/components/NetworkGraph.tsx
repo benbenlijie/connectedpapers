@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
+import { forceCollide } from 'd3-force'
 import { Loader2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, type GraphLink, type GraphNode } from '../graph/graphAdapter'
+import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 import { withAlpha } from '../graph/encoding'
 import GraphToolbar from './graph/GraphToolbar'
 import GraphLegend from './graph/GraphLegend'
@@ -14,6 +16,22 @@ import GraphTooltip from './graph/GraphTooltip'
 import type { Paper } from '../types/domain'
 
 const ForceGraph3D = React.lazy(() => import('../graph/ForceGraph3DLazy'))
+
+interface LabelRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+function paintRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  if (typeof (ctx as any).roundRect === 'function') {
+    ;(ctx as any).roundRect(x, y, w, h, r)
+  } else {
+    ctx.rect(x, y, w, h)
+  }
+}
 
 const NetworkGraph: React.FC = () => {
   const {
@@ -35,6 +53,8 @@ const NetworkGraph: React.FC = () => {
   const fg2dRef = useRef<any>(null)
   const fg3dRef = useRef<any>(null)
   const lastClick = useRef<{ id: string; t: number } | null>(null)
+  const labelRectsRef = useRef<LabelRect[]>([])
+  const fittedRef = useRef<unknown>(null)
 
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null)
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null)
@@ -91,6 +111,16 @@ const NetworkGraph: React.FC = () => {
     return { neighborIds: nIds, linkKeys: lKeys }
   }, [activeId, graphData])
 
+  const priorityLabelIds = useMemo(
+    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds, globalScale: 0, limit: 0 }),
+    [graphData, activeId, neighborIds],
+  )
+
+  const zoomLabelIds = useMemo(
+    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds, globalScale: 2, limit: 12 }),
+    [graphData, activeId, neighborIds],
+  )
+
   const rebuildFromNode = useCallback(
     (node: GraphNode) => {
       const paper: Paper = {
@@ -133,26 +163,58 @@ const NetworkGraph: React.FC = () => {
       const x = node.x ?? 0
       const y = node.y ?? 0
       const dim = activeId !== null && !neighborIds.has(node.id)
-      ctx.globalAlpha = dim ? 0.15 : 1
+
+      if (node.isRoot || selectedNodeId === node.id) {
+        ctx.globalAlpha = dim ? 0.12 : 0.35
+        ctx.beginPath()
+        ctx.arc(x, y, node.size + 4 / globalScale, 0, 2 * Math.PI)
+        ctx.fillStyle = node.isRoot ? 'rgba(255,107,53,0.45)' : 'rgba(255,215,0,0.4)'
+        ctx.fill()
+      }
+
+      ctx.globalAlpha = dim ? 0.12 : 1
       ctx.beginPath()
       ctx.arc(x, y, node.size, 0, 2 * Math.PI)
       ctx.fillStyle = node.color
       ctx.fill()
-      ctx.lineWidth = (node.isRoot ? 3 : selectedNodeId === node.id ? 2.5 : 1) / globalScale
-      ctx.strokeStyle = node.isRoot ? '#ff6b35' : selectedNodeId === node.id ? '#ffd700' : 'rgba(255,255,255,0.55)'
+      ctx.lineWidth = (node.isRoot ? 2.5 : selectedNodeId === node.id ? 2 : 1.25) / globalScale
+      ctx.strokeStyle = node.isRoot ? '#ff6b35' : selectedNodeId === node.id ? '#ffd700' : 'rgba(9,14,20,0.9)'
       ctx.stroke()
-      if (globalScale > 0.55) {
+
+      const showLabel =
+        (globalScale >= ZOOM_LABEL_THRESHOLD ? zoomLabelIds.has(node.id) : priorityLabelIds.has(node.id)) && !dim
+      if (showLabel) {
         const raw = node.title || node.label || ''
-        const label = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw
-        ctx.font = `${12 / globalScale}px Inter, sans-serif`
+        const label = raw.length > 22 ? `${raw.slice(0, 22)}…` : raw
+        const fontSize = 11 / globalScale
+        ctx.font = `600 ${fontSize}px Inter, sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'top'
-        ctx.fillStyle = 'rgba(255,255,255,0.9)'
-        ctx.fillText(label, x, y + node.size + 2 / globalScale)
+        const tw = ctx.measureText(label).width
+        const padX = 3 / globalScale
+        const padY = 2 / globalScale
+        const lx = x - tw / 2 - padX
+        const ly = y + node.size + 3 / globalScale
+        const lw = tw + padX * 2
+        const lh = fontSize + padY * 2
+        const isPriority = priorityLabelIds.has(node.id)
+        const overlaps = labelRectsRef.current.some(
+          (r) => !(lx + lw < r.x || lx > r.x + r.w || ly + lh < r.y || ly > r.y + r.h),
+        )
+        if (isPriority || !overlaps) {
+          labelRectsRef.current.push({ x: lx, y: ly, w: lw, h: lh })
+          ctx.globalAlpha = 0.82
+          ctx.fillStyle = '#0b1220'
+          paintRoundedRect(ctx, lx, ly, lw, lh, 3 / globalScale)
+          ctx.fill()
+          ctx.globalAlpha = 1
+          ctx.fillStyle = 'rgba(241,245,249,0.98)'
+          ctx.fillText(label, x, ly + padY)
+        }
       }
       ctx.globalAlpha = 1
     },
-    [activeId, neighborIds, selectedNodeId],
+    [activeId, neighborIds, selectedNodeId, priorityLabelIds, zoomLabelIds],
   )
 
   const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
@@ -193,10 +255,30 @@ const NetworkGraph: React.FC = () => {
     onNodeClick: handleNodeClick,
     onNodeHover: (n: GraphNode | null) => setHoverNode(n),
     onBackgroundClick: () => setSelectedNodeId(null),
-    onEngineStop: () => setEngineTick((v) => v + 1),
-    cooldownTicks: 120,
-    warmupTicks: 20,
+    onRenderFramePre: () => {
+      labelRectsRef.current = []
+    },
+    onEngineStop: () => {
+      setEngineTick((v) => v + 1)
+      if (fittedRef.current !== graphData) {
+        fittedRef.current = graphData
+        const fg = graphView === '3d' ? fg3dRef.current : fg2dRef.current
+        fg?.zoomToFit?.(600, 60)
+      }
+    },
+    cooldownTicks: 200,
+    warmupTicks: 30,
   }
+
+  useEffect(() => {
+    if (graphView !== '2d') return
+    const fg = fg2dRef.current
+    if (!fg) return
+    fg.d3Force('charge')?.strength(-260)
+    fg.d3Force('link')?.distance((l: any) => ((l.source?.size ?? 5) + (l.target?.size ?? 5)) * 4 + 24)
+    fg.d3Force('collide', forceCollide((n: any) => (n.size ?? 5) + 6).strength(1))
+    fg.d3ReheatSimulation?.()
+  }, [graphData, graphView, dimensions])
 
   useEffect(() => {
     const q = graphQuery.trim().toLowerCase()
@@ -309,7 +391,7 @@ const NetworkGraph: React.FC = () => {
             height={dimensions.height}
             linkDirectionalParticles={2}
             linkDirectionalParticleWidth={1.5}
-            nodeRelSize={4}
+            nodeRelSize={2}
             {...commonProps}
           />
         </React.Suspense>
