@@ -1,0 +1,78 @@
+import React from 'react'
+import { Search } from 'lucide-react'
+import { useUiStore } from '../../store/useUiStore'
+import type { ColorMode, SizeMode } from '../../graph/encoding'
+
+const COLOR_MODES: { value: ColorMode; label: string }[] = [
+  { value: 'cluster', label: '簇' },
+  { value: 'year', label: '年份' },
+  { value: 'field', label: '领域' },
+]
+
+const SIZE_MODES: { value: SizeMode; label: string }[] = [
+  { value: 'citations', label: '引用数' },
+  { value: 'pagerank', label: 'PageRank' },
+]
+
+const GraphToolbar: React.FC = () => {
+  const { graphView, setGraphView, colorMode, setColorMode, sizeMode, setSizeMode, graphQuery, setGraphQuery } =
+    useUiStore()
+
+  return (
+    <div className="absolute left-4 top-4 z-10 flex flex-col gap-2 rounded-lg bg-gray-800/90 p-3 text-xs text-white">
+      <div className="flex overflow-hidden rounded border border-gray-600">
+        {(['2d', '3d'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setGraphView(v)}
+            className={`px-3 py-1 ${graphView === v ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+          >
+            {v.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      <label className="flex items-center gap-2">
+        <span className="text-gray-400">配色</span>
+        <select
+          value={colorMode}
+          onChange={(e) => setColorMode(e.target.value as ColorMode)}
+          className="rounded bg-gray-700 px-1 py-0.5"
+        >
+          {COLOR_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex items-center gap-2">
+        <span className="text-gray-400">大小</span>
+        <select
+          value={sizeMode}
+          onChange={(e) => setSizeMode(e.target.value as SizeMode)}
+          className="rounded bg-gray-700 px-1 py-0.5"
+        >
+          {SIZE_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex items-center gap-1 rounded bg-gray-700 px-2 py-1">
+        <Search className="h-3 w-3 text-gray-400" />
+        <input
+          value={graphQuery}
+          onChange={(e) => setGraphQuery(e.target.value)}
+          placeholder="图内搜索"
+          className="w-28 bg-transparent outline-none placeholder:text-gray-500"
+        />
+      </div>
+    </div>
+  )
+}
+
+export default GraphToolbar
