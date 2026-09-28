@@ -5,8 +5,8 @@ import type { PositionedNode } from './computeLayout'
 export function useLayout(
   nodes: NetworkNode[] | null,
   edges: NetworkEdge[] | null,
-  width: number,
-  height: number,
+  width: number | null,
+  height: number | null,
 ): PositionedNode[] {
   const [positions, setPositions] = useState<PositionedNode[]>([])
   const workerRef = useRef<Worker | null>(null)
@@ -19,7 +19,7 @@ export function useLayout(
 
   useEffect(() => {
     const worker = workerRef.current
-    if (!worker || !nodes || !edges || nodes.length === 0) {
+    if (!worker || !nodes || !edges || nodes.length === 0 || width === null || height === null) {
       setPositions([])
       return
     }
