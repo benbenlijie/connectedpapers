@@ -1,0 +1,30 @@
+name: CI
+on:
+  push: { branches: [main, 'refactor/**'] }
+  pull_request: { branches: [main] }
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: bun test server/
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: academic-paper-explorer/pnpm-lock.yaml }
+      - run: pnpm install --frozen-lockfile
+        working-directory: academic-paper-explorer
+      - run: pnpm typecheck
+        working-directory: academic-paper-explorer
+      - run: pnpm lint
+        working-directory: academic-paper-explorer
+      - run: pnpm test
+        working-directory: academic-paper-explorer
+      - run: pnpm build
+        working-directory: academic-paper-explorer
