@@ -1,0 +1,63 @@
+import { config } from './config'
+import { withRetry } from './retry'
+
+const FIELDS =
+  'paperId,title,abstract,year,citationCount,authors,venue,url,openAccessPdf,fieldsOfStudy,' +
+  'references.paperId,references.title,references.year,citations.paperId,citations.title,citations.year'
+
+export interface S2Paper {
+  paperId: string
+  title?: string
+  abstract?: string
+  year?: number
+  citationCount?: number
+  authors?: Array<{ authorId?: string; name: string; url?: string; affiliations?: string[] }>
+  venue?: string
+  url?: string
+  openAccessPdf?: { url?: string }
+  fieldsOfStudy?: string[]
+  references?: Array<{ paperId: string; title?: string; year?: number; citationCount?: number }>
+  citations?: Array<{ paperId: string; title?: string; year?: number; citationCount?: number }>
+}
+
+function headers(): Record<string, string> {
+  const h: Record<string, string> = {
+    'User-Agent': `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`,
+  }
+  if (config.s2.apiKey) h['x-api-key'] = config.s2.apiKey
+  return h
+}
+
+async function getJson(url: string): Promise<any> {
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(15000) })
+  if (!res.ok) throw Object.assign(new Error(`S2 ${res.status} ${res.statusText}`), { status: res.status })
+  return res.json()
+}
+
+export function getPaper(s2Path: string): Promise<S2Paper> {
+  return withRetry(() => getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}?fields=${FIELDS}`),
+    { retries: 3, baseDelayMs: 1200 })
+}
+
+/** 一次最多 500 个 id，返回与入参同序的数组（缺失为 null）。 */
+export function getPapersBatch(s2Paths: string[]): Promise<(S2Paper | null)[]> {
+  return withRetry(async () => {
+    const res = await fetch(`${config.s2.base}/paper/batch?fields=${FIELDS}`, {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: s2Paths }),
+      signal: AbortSignal.timeout(20000),
+    })
+    if (!res.ok) throw Object.assign(new Error(`S2 batch ${res.status}`), { status: res.status })
+    return res.json()
+  }, { retries: 3, baseDelayMs: 1200 })
+}
+
+export function getRecommendations(s2Path: string): Promise<any> {
+  const base = config.s2.base.replace('/graph/v1', '/recommendations/v1')
+  return getJson(`${base}/papers/forpaper/${encodeURIComponent(s2Path)}?fields=paperId,title,year,citationCount,authors,venue&limit=10`)
+}
+
+export function getCitationContexts(s2Path: string): Promise<any> {
+  return getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}/citations?fields=contexts,citingPaper.paperId,citingPaper.title,citingPaper.year,isInfluential&limit=20`)
+}
