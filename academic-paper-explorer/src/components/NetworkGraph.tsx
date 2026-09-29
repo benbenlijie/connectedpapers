@@ -39,7 +39,7 @@ const NetworkGraph: React.FC = () => {
     selectedPaper,
     selectedNodeId,
     setSelectedNodeId,
-    setSelectedPaper,
+    selectRootPaper,
     filters,
     graphView,
     colorMode,
@@ -48,9 +48,11 @@ const NetworkGraph: React.FC = () => {
     setTimelineYear,
     setTimelinePlaying,
     graphQuery,
+    graphDepth,
+    graphMaxNodes,
   } = useUiStore()
 
-  const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper)
+  const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
   const roRef = useRef<ResizeObserver | null>(null)
   const fg2dRef = useRef<any>(null)
@@ -185,10 +187,10 @@ const NetworkGraph: React.FC = () => {
         fields_of_study: node.fieldsOfStudy,
         source: 'semantic_scholar',
       }
-      setSelectedPaper(paper)
+      selectRootPaper(paper)
       setSelectedNodeId(null)
     },
-    [setSelectedPaper, setSelectedNodeId],
+    [selectRootPaper, setSelectedNodeId],
   )
 
   const handleNodeClick = useCallback(

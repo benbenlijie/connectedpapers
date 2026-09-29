@@ -19,7 +19,10 @@ interface UiState {
   timelineYear: number | null
   timelinePlaying: boolean
   graphQuery: string
+  graphDepth: number | null
+  graphMaxNodes: number | null
   setSelectedPaper: (p: Paper | null) => void
+  selectRootPaper: (p: Paper) => void
   setSelectedNodeId: (id: string | null) => void
   setHighlightedNodes: (ids: string[]) => void
   submitQuery: (q: { query: string; query_type: string }) => void
@@ -31,6 +34,7 @@ interface UiState {
   setTimelineYear: (y: number | null) => void
   setTimelinePlaying: (playing: boolean) => void
   setGraphQuery: (q: string) => void
+  setGraphParams: (depth: number | null, maxNodes: number | null) => void
 }
 
 const defaultFilters = {
@@ -52,7 +56,10 @@ export const useUiStore = create<UiState>((set) => ({
   timelineYear: null,
   timelinePlaying: false,
   graphQuery: '',
+  graphDepth: null,
+  graphMaxNodes: null,
   setSelectedPaper: (p) => set({ selectedPaper: p }),
+  selectRootPaper: (p) => set({ selectedPaper: p, graphDepth: null, graphMaxNodes: null }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   setHighlightedNodes: (ids) => set({ highlightedNodes: ids }),
   submitQuery: (q) => set({ submittedQuery: q }),
@@ -64,4 +71,5 @@ export const useUiStore = create<UiState>((set) => ({
   setTimelineYear: (y) => set({ timelineYear: y }),
   setTimelinePlaying: (playing) => set({ timelinePlaying: playing }),
   setGraphQuery: (q) => set({ graphQuery: q }),
+  setGraphParams: (depth, maxNodes) => set({ graphDepth: depth, graphMaxNodes: maxNodes }),
 }))
