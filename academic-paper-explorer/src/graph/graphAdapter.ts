@@ -1,4 +1,4 @@
-import type { NetworkEdge, NetworkNode } from '../types/domain'
+import type { NetworkEdge, NetworkNode, Paper } from '../types/domain'
 import { colorFor, sizeFor, type ColorMode, type SizeMode } from './encoding'
 
 export interface GraphNode extends NetworkNode {
@@ -40,4 +40,22 @@ export function graphAdapter(
     .filter((e) => ids.has(e.from) && ids.has(e.to))
     .map((e) => ({ source: e.from, target: e.to, type: e.type, weight: e.weight }))
   return { nodes: outNodes, links }
+}
+
+/** Reconstruct a minimal Paper from a graph node (for re-rooting / comparing). */
+export function nodeToPaper(node: NetworkNode): Paper {
+  return {
+    id: node.id,
+    title: node.title || node.label || node.id,
+    authors: node.authors,
+    publication_year: node.year,
+    year: node.year,
+    citation_count: node.citationCount,
+    abstract: node.abstract,
+    venue: node.venue,
+    url: node.url,
+    pdf_url: node.pdfUrl,
+    fields_of_study: node.fieldsOfStudy,
+    source: 'semantic_scholar',
+  }
 }

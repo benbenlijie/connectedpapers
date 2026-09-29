@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { filterGraph } from '../graph/graphFilters'
-import { graphAdapter, linkEndId, type GraphLink, type GraphNode } from '../graph/graphAdapter'
+import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
 import { withAlpha } from '../graph/encoding'
@@ -13,6 +13,7 @@ import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } f
 import { annotatedIds } from '../lib/notes'
 import { useNotesStore } from '../store/useNotesStore'
 import GraphToolbar from './graph/GraphToolbar'
+import NodeContextMenu, { type NodeMenuItem } from './graph/NodeContextMenu'
 import GraphLegend from './graph/GraphLegend'
 import GraphTimeline from './graph/GraphTimeline'
 import GraphMinimap from './graph/GraphMinimap'
@@ -50,6 +51,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     selectRootPaper,
     compareSelectedNodeId,
     setCompareSelectedNodeId,
+    comparePaper,
+    setComparePaper,
+    submitQuery,
     filters,
     graphView,
     colorMode,
@@ -96,6 +100,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [engineTick, setEngineTick] = useState(0)
+  const [menu, setMenu] = useState<{ x: number; y: number; node: GraphNode } | null>(null)
 
   const setContainer = useCallback((el: HTMLDivElement | null) => {
     containerElRef.current = el
@@ -224,21 +229,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
 
   const rebuildFromNode = useCallback(
     (node: GraphNode) => {
-      const paper: Paper = {
-        id: node.id,
-        title: node.title,
-        authors: node.authors,
-        publication_year: node.year,
-        year: node.year,
-        citation_count: node.citationCount,
-        abstract: node.abstract,
-        venue: node.venue,
-        url: node.url,
-        pdf_url: node.pdfUrl,
-        fields_of_study: node.fieldsOfStudy,
-        source: 'semantic_scholar',
-      }
-      selectRootPaper(paper)
+      selectRootPaper(nodeToPaper(node))
       setSelectedNodeId(null)
       setCompareSelectedNodeId(null)
     },
@@ -262,6 +253,51 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       selectNode(node.id)
     },
     [isCompare, rebuildFromNode, selectNode],
+  )
+
+  const rerootFromNode = useCallback(
+    (node: GraphNode) => {
+      if (isCompare) setComparePaper(nodeToPaper(node))
+      else rebuildFromNode(node)
+    },
+    [isCompare, setComparePaper, rebuildFromNode],
+  )
+
+  const searchFromNode = useCallback(
+    (node: GraphNode) => {
+      const query = (node.title || node.label || node.id).trim()
+      if (query) submitQuery({ query, query_type: 'keyword' })
+    },
+    [submitQuery],
+  )
+
+  const compareFromNode = useCallback(
+    (node: GraphNode) => {
+      setComparePaper(nodeToPaper(node))
+    },
+    [setComparePaper],
+  )
+
+  const handleNodeRightClick = useCallback((node: GraphNode, event?: MouseEvent) => {
+    event?.preventDefault?.()
+    setMenu({ x: event?.clientX ?? 0, y: event?.clientY ?? 0, node })
+  }, [])
+
+  const menuItems = useCallback(
+    (node: GraphNode): NodeMenuItem[] => {
+      const items: NodeMenuItem[] = [
+        { label: '以此为根重建网络', onSelect: () => rerootFromNode(node) },
+        { label: '按标题搜索', onSelect: () => searchFromNode(node) },
+      ]
+      if (!isCompare && comparePaper?.id !== node.id) {
+        items.push({ label: '加入对比', onSelect: () => compareFromNode(node) })
+      }
+      if (node.url) {
+        items.push({ label: '打开原文', onSelect: () => window.open(node.url, '_blank', 'noopener') })
+      }
+      return items
+    },
+    [rerootFromNode, searchFromNode, compareFromNode, isCompare, comparePaper],
   )
 
   const paintNode = useCallback(
@@ -370,8 +406,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     linkDirectionalArrowRelPos: 0.9,
     linkDirectionalArrowColor: linkColor,
     onNodeClick: handleNodeClick,
+    onNodeRightClick: handleNodeRightClick,
     onNodeHover: (n: GraphNode | null) => setHoverNode(n),
     onBackgroundClick: () => selectNode(null),
+    onBackgroundRightClick: () => setMenu(null),
     onRenderFramePre: () => {
       labelRectsRef.current = []
     },
@@ -480,6 +518,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     <div
       ref={setContainer}
       className="relative h-full bg-gray-900"
+      onContextMenu={(e) => e.preventDefault()}
       onMouseMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect()
         setPointer({ x: e.clientX - rect.left, y: e.clientY - rect.top })
@@ -537,6 +576,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       </div>
 
       {hoverNode && pointer && <GraphTooltip node={hoverNode} x={pointer.x} y={pointer.y} />}
+
+      {menu && (
+        <NodeContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems(menu.node)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

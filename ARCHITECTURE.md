@@ -105,7 +105,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `lib/ai.ts` | Client provider orchestration for `/api/ai` (openai providers, fallback). |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
-| `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
+| `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap, node context menu. |
 | `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline, explicit network params. |
 | `store/useNotesStore.ts` | Zustand store for per-paper notes, persisted to `localStorage`. |
 | `store/useReadingStore.ts` | Zustand store for reading status/progress, persisted to `localStorage`. |
@@ -308,6 +308,17 @@ for creating (colour + optional note) or editing (recolour/delete) them.
 `SearchBar` records on submit and shows a filtered dropdown on focus, where
 clicking an item re-runs the search. Dropdown items use `onMouseDown`
 preventDefault so the input keeps focus through the click.
+
+### 17. Graph node context menu
+
+Right-clicking a node opens `NodeContextMenu` (fixed-positioned, closes on
+outside click / Escape / scroll) with actions on that paper: **以此为根重建网络**
+(re-root the pane — primary via `selectRootPaper`, compare via `setComparePaper`;
+the primary double-click rebuild reuses `graphAdapter.nodeToPaper`), **按标题搜索**
+(`submitQuery` with the node title as a keyword query), **加入对比** (primary
+only), and **打开原文** (when the node has a `url`). `NetworkGraph` wires
+`onNodeRightClick`/`onBackgroundRightClick` in the shared props and suppresses the
+browser menu via `onContextMenu` preventDefault, so it works in 2D and 3D.
 
 ## Data model
 
