@@ -4,6 +4,7 @@ import { getPaper, searchPapers } from '../s2'
 import { toS2Input } from '../resolve'
 import { normalizeS2Paper } from '../normalize'
 import { logSearch } from '../db-queries'
+import { rankSearchResults } from '../searchRank'
 
 interface Body { query: string; query_type?: 'keyword' | 'doi' | 'arxiv' | 's2_id' }
 
@@ -39,9 +40,9 @@ export async function searchRoute(req: Request): Promise<Response> {
     papers = [normalizeS2(p)]
   }
 
-  const deduped = dedupe(papers)
-  logSearch(query, query_type, deduped.length, Date.now() - started)
-  return json({ data: { papers: deduped.slice(0, 50), total_count: deduped.length, query_type }, ...(warning ? { warning } : {}) })
+  const ranked = rankSearchResults(papers, query)
+  logSearch(query, query_type, ranked.length, Date.now() - started)
+  return json({ data: { papers: ranked.slice(0, 50), total_count: ranked.length, query_type }, ...(warning ? { warning } : {}) })
 }
 
 function normalizeS2(p: any) {
@@ -56,11 +57,4 @@ function normalizeOa(w: any) {
     doi: (w.doi ?? '').replace(/^https?:\/\/doi\.org\//, ''),
   }
 }
-function dedupe(papers: any[]) {
-  const map = new Map<string, any>()
-  for (const p of papers) {
-    const key = p.doi || p.semantic_scholar_id || p.openalex_id || p.title
-    if (key && !map.has(key)) map.set(key, p)
-  }
-  return [...map.values()].sort((a, b) => (b.citation_count ?? 0) - (a.citation_count ?? 0))
-}
+
