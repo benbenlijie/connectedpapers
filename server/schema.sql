@@ -97,3 +97,13 @@ create table if not exists search_queries (
   execution_time_ms integer not null default 0,
   created_at        text not null default (datetime('now'))
 );
+
+create table if not exists translations (
+  hash            text primary key,
+  target_lang     text not null,
+  source_text     text not null,
+  translated_text text not null,
+  provider        text,
+  created_at      text not null default (datetime('now'))
+);
+create index if not exists translations_target_idx on translations(target_lang);

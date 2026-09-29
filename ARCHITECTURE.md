@@ -27,9 +27,11 @@ Hard constraints that shape every decision below:
    │  routes                                                  │
    ├── POST /api/search   server/routes/search.ts             │
    ├── POST /api/details  server/routes/details.ts            │
-   ├── POST /api/network  server/routes/network.ts ──┐        │
-   ├── GET  /api/jobs/:id server/routes/jobs.ts ─────┼──┐     │
-   └── GET  *             static academic-paper-explorer/dist │
+    ├── POST /api/network  server/routes/network.ts ──┐        │
+    ├── GET  /api/jobs/:id server/routes/jobs.ts ─────┼──┐     │
+    ├── POST /api/translate server/routes/translate.ts │  │     │
+    ├── GET  /api/llm/status server/routes/llm.ts ─────┘  │     │
+    └── GET  *             static academic-paper-explorer/dist │
                            (SPA fallback to index.html)       │
                                                               │
    kernel: ids · retry · s2 · openalex · resolve · normalize   │
@@ -69,6 +71,11 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `papers.ts` | `upsertPaper`, `upsertCitation`, `ensurePaperStub` (FK ordering). |
 | `graph.ts` | BFS crawl batcher + `pagerank` + `connectedComponents`. |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
+| `llm.ts` | Configurable LLM providers (`LLM_PROVIDERS`), `chat` against OpenAI-compatible endpoints. |
+| `translate.ts` | Translation prompt construction + tolerant JSON-array parsing. |
+| `translation-cache.ts` | Translation cache keyed by `(target, source)`. |
+| `routes/llm.ts` | `GET /api/llm/status`: public provider list (no secrets). |
+| `routes/translate.ts` | `POST /api/translate`: cache + batch translate through a provider. |
 | `db-queries.ts` | `queryHash`, `getCachedNetwork`, `cacheNetwork`, `logSearch`. |
 | `db.ts` | SQLite handle + schema application. |
 | `config.ts` | Typed config (crawl limits, cache TTL/version, upstream bases, server). |
@@ -201,6 +208,19 @@ render on the primary pane (the compare pane keeps its own export menu via a
 `usePaperNetwork(rootPaper)`, so React Query caches the two networks
 independently. `PaperList` toggles B with a per-row button, and the URL adds
 `paper2`/`node2`; a history entry is pushed when either root changes.
+
+### 10. Configurable LLM providers and translation
+
+`LLM_PROVIDERS` (a JSON array in `server/.env`, order = priority) lists
+OpenAI-compatible endpoints and browser-built-in translators. `llm.ts:chat`
+POSTs `{baseUrl}/chat/completions` with a Bearer key when present and an
+`AbortController` timeout; `routes/translate.ts` serves
+`translations`-table cache hits, batches the rest into one call, and parses a
+length-checked JSON array (`translate.ts`). Keys stay server-side. Provider
+fallback lives on the client: it walks the `/api/llm/status` order, handles
+`kind: "browser"` locally, and posts `/api/translate` with an explicit provider
+for `kind: "openai"` entries, advancing on failure. The cache key is
+`hash(target|source)` so results are reused across providers.
 
 ## Data model
 

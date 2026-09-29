@@ -73,6 +73,18 @@ PORT=8787
 - `SEMANTIC_SCHOLAR_API_KEY` 可选，配置后可获得更稳定的 Semantic Scholar 速率限制。
 - 默认只监听回环地址 `127.0.0.1`；如需修改端口可使用 `PORT=9000 bun run server`。
 
+### LLM / 翻译 provider（可选）
+
+`LLM_PROVIDERS` 为 JSON 数组，数组顺序即优先级，失败自动降级：
+
+```env
+LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1","apiKey":"sk-...","model":"mtcode/deepseek-flash"},{"name":"browser","kind":"browser"}]
+```
+
+- `kind: "openai"`：任意 OpenAI 兼容 Chat Completions（mtcode / DeepSeek / OpenAI / Ollama）。
+- `kind: "browser"`：浏览器内置 Translator API，前端本地执行，无需 key。
+- 未配置时翻译接口返回 `LLM_UNAVAILABLE`，可在部署时按需填写候选。
+
 ## API 路由
 
 本地服务在 `http://127.0.0.1:8787` 上提供：
@@ -81,6 +93,8 @@ PORT=8787
 - `POST /api/details` — 获取论文详情
 - `POST /api/network` — 获取/构建引用网络
 - `GET /api/jobs/:id` — 查询异步任务状态
+- `POST /api/translate` — 批量翻译（走可配置的 LLM provider）
+- `GET /api/llm/status` — 查询可用的 LLM/翻译 provider 候选
 
 静态前端由同一进程托管。
 
