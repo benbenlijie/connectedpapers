@@ -109,8 +109,10 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline, explicit network params. |
 | `store/useNotesStore.ts` | Zustand store for per-paper notes, persisted to `localStorage`. |
 | `store/useReadingStore.ts` | Zustand store for reading status/progress, persisted to `localStorage`. |
+| `store/useHighlightsStore.ts` | Zustand store for reader highlights, persisted to `localStorage`. |
 | `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
 | `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
+| `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
 
 ## Key design decisions
 
@@ -283,6 +285,18 @@ carries `?pid=<paperId>` and the reader keys on `pid ?? arxivId`. `PaperList`
 shows a per-row status select + badge and a "仅看阅读清单" filter; `ReaderPage`
 marks the paper `reading` on open (unless already `reading`/`done`) and writes a
 throttled scroll percentage from an iframe `scroll` listener.
+
+### 15. Reader highlights
+
+A highlight anchors to `{ blockIndex, start, end }` (block order from
+`collectBlocks`, character offsets within the block). `lib/highlights.ts` maps a
+`Range` to/from an anchor, wraps each selected text segment in
+`<mark data-hl-id>` (splitting text nodes, so ranges spanning inline elements
+work), and unwraps on delete/clear. Because the marks preserve the block's text,
+the stored offsets stay valid across reloads. `store/useHighlightsStore.ts`
+persists `localStorage['connectedpapers.highlights.v1']` per reader key;
+`ReaderPage` re-applies stored highlights on iframe load and shows a floating bar
+for creating (colour + optional note) or editing (recolour/delete) them.
 
 ## Data model
 
