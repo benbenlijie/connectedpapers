@@ -2,6 +2,7 @@ export type ErrorCode =
   | 'INVALID_JSON' | 'MISSING_PAPER_ID' | 'PAPER_NOT_FOUND' | 'PAPER_FETCH_FAILED'
   | 'NETWORK_BUILD_FAILED' | 'INTERNAL_SERVER_ERROR' | 'RATE_LIMITED'
   | 'UPSTREAM_FAILED' | 'VALIDATION_FAILED' | 'JOB_NOT_FOUND'
+  | 'LLM_UNAVAILABLE' | 'TRANSLATE_FAILED'
 
 export class ApiError extends Error {
   constructor(public code: ErrorCode, message: string, public status = 400) {

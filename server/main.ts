@@ -5,6 +5,8 @@ import { searchRoute } from './routes/search'
 import { detailsRoute } from './routes/details'
 import { networkRoute } from './routes/network'
 import { jobRoute } from './routes/jobs'
+import { translateRoute } from './routes/translate'
+import { llmStatusRoute } from './routes/llm'
 
 const WEB_DIST = new URL('../academic-paper-explorer/dist', import.meta.url).pathname
 
@@ -30,6 +32,8 @@ const server = Bun.serve({
       if (p === '/api/search' && req.method === 'POST') return await searchRoute(req)
       if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
       if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
+      if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
+      if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
       if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
       if (p.startsWith('/api/')) throw new ApiError('VALIDATION_FAILED', `未知接口: ${p}`, 404)
       return await serveStatic(p)
