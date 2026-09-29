@@ -20,8 +20,19 @@ describe('sanitizeArticleHtml', () => {
     <p>world</p>
   </body></html>`
 
-  it('injects a base href for arxiv assets', () => {
-    expect(sanitizeArticleHtml(html)).toContain('<base href="https://arxiv.org/">')
+  it('injects a base href pointing at the arxiv html directory', () => {
+    expect(sanitizeArticleHtml(html)).toContain('<base href="https://arxiv.org/html/">')
+  })
+
+  it('converts SVG <object> figures into <img> and drops other objects', () => {
+    const withObjects = `<html><body>
+      <object type="image/svg+xml" data="2601.21998v2/a.svg" width="10" height="5"></object>
+      <object type="text/html" data="evil.html"></object>
+    </body></html>`
+    const out = sanitizeArticleHtml(withObjects)
+    expect(out).toContain('<img')
+    expect(out).toContain('2601.21998v2/a.svg')
+    expect(out).not.toContain('<object')
   })
 
   it('strips scripts, iframes and event handlers', () => {

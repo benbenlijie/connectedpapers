@@ -1,4 +1,5 @@
 const ARXIV_BASE = 'https://arxiv.org'
+const ARXIV_HTML_DIR = `${ARXIV_BASE}/html/`
 
 export function arxivHtmlUrl(id: string): string {
   return `${ARXIV_BASE}/html/${encodeURIComponent(id)}`
@@ -23,10 +24,23 @@ const STRIP_TAGS = ['script', 'iframe', 'object', 'embed', 'noscript']
 /**
  * Defensive sanitize for third-party (arXiv) HTML before it is rendered in a
  * sandboxed same-origin iframe: drop active content and pointing handlers, and
- * inject a <base> so the page's absolute asset paths resolve against arxiv.org.
+ * inject a <base> so relative asset paths resolve against the arXiv html
+ * directory (figures use relative paths like `2601.21998v2/fig.png`).
  */
 export function sanitizeArticleHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+
+  // LaTeXML renders SVG figures as <object type="image/svg+xml" data=...>; turn
+  // those into <img> so they survive the sanitizer, then drop any other object.
+  doc.querySelectorAll('object[type="image/svg+xml"][data]').forEach((obj) => {
+    const img = doc.createElement('img')
+    img.setAttribute('src', obj.getAttribute('data') ?? '')
+    for (const attr of ['alt', 'width', 'height', 'style', 'class', 'id']) {
+      const value = obj.getAttribute(attr)
+      if (value) img.setAttribute(attr, value)
+    }
+    obj.replaceWith(img)
+  })
 
   for (const tag of STRIP_TAGS) {
     doc.querySelectorAll(tag).forEach((el) => el.remove())
@@ -46,7 +60,7 @@ export function sanitizeArticleHtml(html: string): string {
   const head = doc.querySelector('head') ?? doc.documentElement
   head.querySelectorAll('base').forEach((el) => el.remove())
   const base = doc.createElement('base')
-  base.setAttribute('href', `${ARXIV_BASE}/`)
+  base.setAttribute('href', ARXIV_HTML_DIR)
   head.insertBefore(base, head.firstChild)
 
   return `<!DOCTYPE html>${doc.documentElement.outerHTML}`
