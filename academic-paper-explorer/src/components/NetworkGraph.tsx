@@ -7,6 +7,7 @@ import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
+
 import { withAlpha } from '../graph/encoding'
 import GraphToolbar from './graph/GraphToolbar'
 import GraphLegend from './graph/GraphLegend'
@@ -140,6 +141,32 @@ const NetworkGraph: React.FC = () => {
   const zoomLabelIds = useMemo(
     () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds, globalScale: 2, limit: 12 }),
     [graphData, activeId, neighborIds],
+  )
+
+  // 3D labels: base on selection only (not hover) so hovering does not rebuild
+  // the whole three.js node object set every frame.
+  const selectedNeighborIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (!selectedNodeId) return ids
+    ids.add(selectedNodeId)
+    for (const link of graphData.links) {
+      const s = linkEndId(link.source)
+      const t = linkEndId(link.target)
+      if (s === selectedNodeId) ids.add(t)
+      if (t === selectedNodeId) ids.add(s)
+    }
+    return ids
+  }, [graphData, selectedNodeId])
+
+  const labelIds3d = useMemo(
+    () =>
+      pickVisibleLabels(graphData.nodes, {
+        activeId: selectedNodeId,
+        neighborIds: selectedNeighborIds,
+        globalScale: 2,
+        limit: 15,
+      }),
+    [graphData, selectedNodeId, selectedNeighborIds],
   )
 
   const rebuildFromNode = useCallback(
@@ -413,6 +440,7 @@ const NetworkGraph: React.FC = () => {
             linkDirectionalParticles={2}
             linkDirectionalParticleWidth={1.5}
             nodeRelSize={2}
+            labelIds={labelIds3d}
             {...commonProps}
           />
         </React.Suspense>
