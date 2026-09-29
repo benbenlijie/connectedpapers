@@ -1,7 +1,14 @@
-import type { NetworkNode } from '../types/domain'
+import type { NetworkNode, EdgeType } from '../types/domain'
 
 export type ColorMode = 'cluster' | 'year' | 'field'
 export type SizeMode = 'citations' | 'pagerank'
+
+export const EDGE_COLORS: Record<EdgeType, string> = {
+  reference: '#60a5fa',
+  citation: '#4ade80',
+  related: '#fbbf24',
+  coupling: '#a78bfa',
+}
 
 const CLUSTER_PALETTE = [
   '#22d3ee', '#a3e635', '#fb7185', '#fbbf24', '#818cf8',

@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { connectedComponents, pagerank } from './graph'
+import { connectedComponents, pagerank, bibliographicCoupling } from './graph'
 
 test('connected components assigns ids', () => {
   const nodes = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
@@ -25,4 +25,16 @@ test('pagerank routes edges to ids outside nodes into dangling mass', () => {
   const sum = [...pr.values()].reduce((s, v) => s + v, 0)
   expect(Math.abs(sum - 1)).toBeLessThan(1e-6)
   expect(pr.has('ghost')).toBe(false)
+})
+
+test('bibliographic coupling emits weighted edges for shared references', () => {
+  const refs = new Map<string, Set<string>>([
+    ['a', new Set(['r1', 'r2', 'r3'])],
+    ['b', new Set(['r2', 'r3', 'r4'])],
+    ['c', new Set(['r9'])],
+  ])
+  expect(bibliographicCoupling(refs, 2)).toEqual([
+    { from: 'a', to: 'b', type: 'coupling', weight: 2 },
+  ])
+  expect(bibliographicCoupling(refs, 3)).toEqual([])
 })

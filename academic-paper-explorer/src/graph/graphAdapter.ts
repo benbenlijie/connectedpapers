@@ -1,4 +1,4 @@
-import type { NetworkEdge, NetworkNode, Paper } from '../types/domain'
+import type { NetworkEdge, NetworkNode, Paper, EdgeType } from '../types/domain'
 import { colorFor, sizeFor, type ColorMode, type SizeMode } from './encoding'
 
 export interface GraphNode extends NetworkNode {
@@ -13,7 +13,7 @@ export interface GraphNode extends NetworkNode {
 export interface GraphLink {
   source: string | GraphNode
   target: string | GraphNode
-  type: 'reference' | 'citation'
+  type: EdgeType
   weight: number
 }
 

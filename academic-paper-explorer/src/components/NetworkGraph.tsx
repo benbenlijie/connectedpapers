@@ -8,7 +8,7 @@ import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
-import { withAlpha } from '../graph/encoding'
+import { EDGE_COLORS, withAlpha } from '../graph/encoding'
 import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } from '../graph/exportGraph'
 import {
   applyPositions,
@@ -390,7 +390,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
 
   const linkColor = useCallback(
     (link: GraphLink) => {
-      const base = link.type === 'citation' ? '#4ade80' : '#60a5fa'
+      const base = EDGE_COLORS[link.type] ?? EDGE_COLORS.reference
       if (!activeId) return withAlpha(base, 0.35)
       const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
       return linkKeys.has(key) ? base : withAlpha(base, 0.06)
