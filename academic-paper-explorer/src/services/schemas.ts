@@ -14,6 +14,7 @@ export const paperSchema = z.object({
   url: z.string().nullish(),
   pdf_url: z.string().nullish(),
   doi: z.string().nullish(),
+  arxiv_id: z.string().nullish(),
   fields_of_study: z.array(z.string()).optional(),
   source: z.string(),
 }).passthrough()

@@ -16,6 +16,7 @@ export function normalizeS2Paper(p: S2Paper) {
     url: p.url ?? null,
     pdf_url: p.openAccessPdf?.url ?? null,
     doi: p.externalIds?.DOI ?? null,
+    arxiv_id: p.externalIds?.ArXiv ?? null,
     fields_of_study: p.fieldsOfStudy ?? [],
     reference_count: p.references?.length ?? 0,
     is_open_access: Boolean(p.openAccessPdf?.url),
