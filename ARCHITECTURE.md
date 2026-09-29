@@ -69,7 +69,8 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `openalex.ts` | OpenAlex client: search, DOI lookup, `getWorkByOpenAlexId`, abstract reconstruction. |
 | `normalize.ts` | Shared S2 paper shape so search and details responses agree. |
 | `papers.ts` | `upsertPaper`, `upsertCitation`, `ensurePaperStub` (FK ordering). |
-| `graph.ts` | BFS crawl batcher + `pagerank` + `connectedComponents`. |
+| `graph.ts` | BFS crawl batcher (references + citations + recommendations/OpenAlex related), bibliographic coupling, `pagerank` + `connectedComponents`. |
+| `identity.ts` | Canonical work ids (DOI > arXiv > provider id) + duplicate merging. |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
 | `llm.ts` | Configurable LLM providers (`LLM_PROVIDERS`), `chat` against OpenAI-compatible endpoints. |
 | `ai.ts` | Pure AI prompt construction (`explain`/`summarize`/`ask`). |
@@ -332,6 +333,23 @@ positions, pruned to 8 entries by `savedAt` with a 7-day freshness TTL.
 instantly, no request, no loading flash) and writes results back; `NetworkGraph`
 applies cached positions before rendering and saves positions on `onEngineStop`.
 The server cache still backs the first build; this layer removes the repeat.
+
+### 19. Multi-source related edges and canonical dedupe
+
+Beyond citation BFS, `buildNetwork` adds: `related` edges from Semantic Scholar
+recommendations (root, batched via `getPapersBatch`) and from OpenAlex
+`related_works` (best-effort, resolved by DOI), plus `coupling` edges from
+bibliographic coupling computed locally over the crawled reference sets
+(`bibliographicCoupling`, kept when the shared-reference count reaches
+`config.related.couplingMin`). Edge types are now
+`reference | citation | related | coupling`, coloured via `EDGE_COLORS` and shown
+in the legend. `identity.ts` gives each work a canonical key (DOI > arXiv >
+provider id, DOI lowercased, arXiv version-stripped) and `mergeDuplicates`
+collapses nodes that resolve to the same work (first id wins), repointing edges,
+dropping self-loops and deduping edges by `from|to|type`. Node ids stay S2
+paperIds so the `papers`/`citations` schema and routes are unchanged. Both caches
+are invalidated by bumping `graphVersion` (server) / `NETWORK_GRAPH_VERSION`
+(client).
 
 ## Data model
 

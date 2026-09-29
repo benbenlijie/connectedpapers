@@ -1,4 +1,6 @@
-import { getPapersBatch, type S2Paper } from './s2'
+import { getPapersBatch, getRecommendations, type S2Paper } from './s2'
+import { getRelatedWorksByDoi } from './openalex'
+import { canonicalKeyFromS2, mergeDuplicates, normalizeDoi } from './identity'
 import { config } from './config'
 import { upsertPaper, upsertCitation, ensurePaperStub } from './papers'
 
@@ -8,7 +10,7 @@ export interface GraphNode {
   fieldsOfStudy: string[]; isRoot: boolean; depth: number
   pageRankScore: number; clusterId: number; size: number; color: string
 }
-export interface GraphEdge { from: string; to: string; type: 'reference' | 'citation'; weight: number }
+export interface GraphEdge { from: string; to: string; type: 'reference' | 'citation' | 'related' | 'coupling'; weight: number }
 export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export function connectedComponents(nodes: GraphNode[], edges: GraphEdge[]): Map<string, number> {
@@ -83,11 +85,55 @@ export interface BuildOpts {
   onProgress?: (done: number, total: number) => void
 }
 
+/** Undirected bibliographic coupling: papers sharing >= minShared references. */
+export function bibliographicCoupling(refsByNode: Map<string, Set<string>>, minShared: number): GraphEdge[] {
+  const ids = [...refsByNode.keys()]
+  const out: GraphEdge[] = []
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = refsByNode.get(ids[i])!
+      const b = refsByNode.get(ids[j])!
+      const [small, big] = a.size <= b.size ? [a, b] : [b, a]
+      let shared = 0
+      for (const r of small) if (big.has(r)) shared++
+      if (shared >= minShared) out.push({ from: ids[i], to: ids[j], type: 'coupling', weight: shared })
+    }
+  }
+  return out
+}
+
+function openAlexNode(w: any, depth: number): GraphNode {
+  const authors = (w?.authorships ?? [])
+    .map((a: any) => a?.author?.display_name)
+    .filter((n: unknown): n is string => Boolean(n))
+    .join(', ')
+  return {
+    id: normalizeDoi(w?.doi) ?? String(w?.id ?? ''),
+    label: w?.title ?? '未知标题',
+    title: w?.title ?? '',
+    year: w?.publication_year,
+    citationCount: w?.cited_by_count ?? 0,
+    authors,
+    venue: w?.primary_location?.source?.display_name,
+    url: w?.id,
+    pdfUrl: w?.open_access?.oa_url,
+    fieldsOfStudy: (w?.concepts ?? []).map((c: any) => c?.display_name).filter(Boolean),
+    isRoot: false,
+    depth,
+    pageRankScore: 0,
+    clusterId: 0,
+    size: Math.max(15, Math.log10((w?.cited_by_count ?? 0) + 1) * 12),
+    color: colorFor(depth),
+  }
+}
+
 export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Graph> {
   const { depth, maxNodes, onProgress } = opts
   const nodes = new Map<string, GraphNode>()
   const edges: GraphEdge[] = []
   const seen = new Set<string>([root.paperId])
+  const canonicalOf = new Map<string, string>([[root.paperId, canonicalKeyFromS2(root)]])
+  const refsByNode = new Map<string, Set<string>>()
   nodes.set(root.paperId, toNode(root, true, 0))
   upsertPaper(root)
 
@@ -103,6 +149,10 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     const citeLimit = config.crawl.citeLimit[Math.min(level, 3)]
 
     for (const paper of frontier) {
+      const refs = refsByNode.get(paper.paperId) ?? new Set<string>()
+      for (const r of paper.references ?? []) refs.add(r.paperId)
+      refsByNode.set(paper.paperId, refs)
+
       for (const r of (paper.references ?? []).slice(0, refLimit)) {
         if (!edges.some((e) => e.from === paper.paperId && e.to === r.paperId)) {
           edges.push({ from: paper.paperId, to: r.paperId, type: 'reference', weight: 1 })
@@ -128,10 +178,11 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
 
     const fetched = await getPapersBatch(wanted)
     const nextFrontier: S2Paper[] = []
-    fetched.forEach((p, i) => {
+    fetched.forEach((p) => {
       if (!p || nodes.size >= maxNodes) return
       seen.add(p.paperId)
       nodes.set(p.paperId, toNode(p, false, level + 1))
+      canonicalOf.set(p.paperId, canonicalKeyFromS2(p))
       upsertPaper(p)
       nextFrontier.push(p)
     })
@@ -143,13 +194,77 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     }
   }
 
-  const nodeList = [...nodes.values()]
-  const pr = pagerank(nodeList, edges)
-  const comps = connectedComponents(nodeList, edges)
+  await addRelatedNodes(root, nodes, edges, seen, canonicalOf, maxNodes)
+
+  if (config.related.couplingMin > 0) {
+    edges.push(...bibliographicCoupling(refsByNode, config.related.couplingMin))
+  }
+
+  const merged = mergeDuplicates([...nodes.values()], edges, canonicalOf)
+  const nodeList = merged.nodes
+  const edgeList = merged.edges
+
+  const pr = pagerank(nodeList, edgeList)
+  const comps = connectedComponents(nodeList, edgeList)
   for (const node of nodeList) {
     node.pageRankScore = pr.get(node.id) ?? 0
     node.clusterId = comps.get(node.id) ?? 0
     node.size = Math.max(15, node.pageRankScore * 1000)
   }
-  return { nodes: nodeList, edges }
+  return { nodes: nodeList, edges: edgeList }
+}
+
+/** Add `related` neighbours from S2 recommendations and OpenAlex (best-effort). */
+async function addRelatedNodes(
+  root: S2Paper,
+  nodes: Map<string, GraphNode>,
+  edges: GraphEdge[],
+  seen: Set<string>,
+  canonicalOf: Map<string, string>,
+  maxNodes: number,
+): Promise<void> {
+  const relatedIds: string[] = []
+  try {
+    const rec = await getRecommendations(root.paperId)
+    for (const r of rec?.recommendedPapers ?? []) {
+      if (r?.paperId && !seen.has(r.paperId)) relatedIds.push(r.paperId)
+      if (relatedIds.length >= config.related.recommendLimit) break
+    }
+  } catch {
+    // best-effort
+  }
+
+  const s2Budget = Math.max(0, Math.min(config.related.relatedNodeBudget, maxNodes - nodes.size))
+  if (relatedIds.length && s2Budget > 0) {
+    try {
+      const fetched = await getPapersBatch(relatedIds.slice(0, s2Budget))
+      fetched.forEach((p, i) => {
+        if (!p || seen.has(p.paperId) || nodes.size >= maxNodes) return
+        seen.add(p.paperId)
+        nodes.set(p.paperId, toNode(p, false, 1))
+        canonicalOf.set(p.paperId, canonicalKeyFromS2(p))
+        upsertPaper(p)
+        edges.push({ from: root.paperId, to: p.paperId, type: 'related', weight: Math.max(1, config.related.recommendLimit - i) })
+      })
+    } catch {
+      // best-effort
+    }
+  }
+
+  try {
+    const doi = normalizeDoi(root.externalIds?.DOI)
+    const budget = Math.max(0, Math.min(config.related.relatedNodeBudget, maxNodes - nodes.size))
+    if (doi && budget > 0) {
+      const works = await getRelatedWorksByDoi(doi, config.related.openalexLimit)
+      works.slice(0, budget).forEach((w, i) => {
+        const id = normalizeDoi(w?.doi) ?? String(w?.id ?? '')
+        if (!id || nodes.has(id)) return
+        canonicalOf.set(id, id)
+        nodes.set(id, openAlexNode(w, 1))
+        edges.push({ from: root.paperId, to: id, type: 'related', weight: Math.max(1, config.related.openalexLimit - i) })
+      })
+    }
+  } catch {
+    // best-effort
+  }
 }

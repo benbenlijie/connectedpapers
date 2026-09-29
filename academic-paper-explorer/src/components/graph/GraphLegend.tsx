@@ -1,6 +1,6 @@
 import React from 'react'
 import { useUiStore } from '../../store/useUiStore'
-import { colorFor } from '../../graph/encoding'
+import { colorFor, EDGE_COLORS } from '../../graph/encoding'
 import type { GraphNode } from '../../graph/graphAdapter'
 
 interface Props {
@@ -57,6 +57,14 @@ const GraphLegend: React.FC<Props> = ({ nodes }) => {
         <div className="flex items-center gap-2">
           <span className="h-0.5 w-4 bg-blue-400" />
           <span>参考关系</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-0.5 w-4" style={{ background: EDGE_COLORS.related }} />
+          <span>相关（推荐）</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-0.5 w-4" style={{ background: EDGE_COLORS.coupling }} />
+          <span>文献耦合</span>
         </div>
       </div>
     </div>

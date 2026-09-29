@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { colorFor, sizeFor, withAlpha } from './encoding'
+import { colorFor, sizeFor, withAlpha, EDGE_COLORS } from './encoding'
 import type { NetworkNode } from '../types/domain'
 
 const node = (over: Partial<NetworkNode> = {}): NetworkNode => ({
@@ -52,5 +52,13 @@ describe('withAlpha', () => {
   })
   it('passes through non-hex strings', () => {
     expect(withAlpha('hsl(1,2%,3%)', 0.5)).toBe('hsl(1,2%,3%)')
+  })
+})
+
+describe('EDGE_COLORS', () => {
+  it('maps every edge type to a distinct colour', () => {
+    const colours = [EDGE_COLORS.reference, EDGE_COLORS.citation, EDGE_COLORS.related, EDGE_COLORS.coupling]
+    expect(colours.every((c) => /^#[0-9a-f]{6}$/i.test(c))).toBe(true)
+    expect(new Set(colours).size).toBe(4)
   })
 })

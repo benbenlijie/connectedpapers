@@ -39,7 +39,8 @@ export type NetworkNode = {
   color: string
 }
 
-export type NetworkEdge = { from: string; to: string; type: 'reference' | 'citation'; weight: number }
+export type EdgeType = 'reference' | 'citation' | 'related' | 'coupling'
+export type NetworkEdge = { from: string; to: string; type: EdgeType; weight: number }
 export type NetworkData = { nodes: NetworkNode[]; edges: NetworkEdge[] }
 export type SearchQuery = { query: string; query_type: 'keyword' | 'doi' | 'arxiv' | 's2_id' }
 

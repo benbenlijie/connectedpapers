@@ -60,3 +60,34 @@ export function reconstructAbstract(inv: Record<string, number[]> | null | undef
   for (const [w, positions] of Object.entries(inv)) for (const p of positions) words[p] = w
   return words.filter(Boolean).join(' ')
 }
+
+const RELATED_SELECT =
+  'id,doi,title,publication_year,cited_by_count,authorships,primary_location,concepts,open_access,related_works'
+
+async function fetchWork(url: string): Promise<any | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': ua() } })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+async function relatedFrom(work: any, limit: number): Promise<any[]> {
+  const ids: string[] = Array.isArray(work?.related_works)
+    ? work.related_works.map((u: string) => String(u).match(/(W\d+)/)?.[1]).filter((v: unknown): v is string => Boolean(v))
+    : []
+  const take = ids.slice(0, limit)
+  if (!take.length) return []
+  const url = `${config.openalex.base}/works?filter=openalex_id:${take.join('|')}&per_page=${take.length}&select=${RELATED_SELECT}&mailto=${mailto()}`
+  const body = await fetchWork(url)
+  return body?.results ?? []
+}
+
+/** Best-effort related works for a DOI (algorithmic relatedness). */
+export async function getRelatedWorksByDoi(doi: string, limit: number): Promise<any[]> {
+  if (!doi) return []
+  const work = await fetchWork(`${config.openalex.base}/works/doi:${encodeURIComponent(doi)}?select=${RELATED_SELECT}&mailto=${mailto()}`)
+  return work ? relatedFrom(work, limit) : []
+}
