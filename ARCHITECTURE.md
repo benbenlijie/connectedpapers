@@ -188,6 +188,20 @@ saved hint; `NetworkGraph` derives `annotatedIds` from the store and marks those
 nodes in the 2D canvas pass. Notes are deliberately local-only: not in the URL,
 not exported, and not marked in 3D.
 
+### 9. Dual-paper comparison
+
+`useUiStore` gains a second root slot (`comparePaper`) and its own node selection
+(`compareSelectedNodeId`). `NetworkGraph` is parameterized with
+`{ paper?, slot?: 'primary' | 'compare' }`: the pane derives its selection id from
+the slot and a slot-aware setter that clears the *other* slot's selection, so the
+details panel follows whichever pane was clicked last. Filters, encodings, view
+mode and timeline stay shared through the store; only the toolbar/legend/timeline
+render on the primary pane (the compare pane keeps its own export menu via a
+`placement` prop on `GraphToolbar`). Each pane runs its own
+`usePaperNetwork(rootPaper)`, so React Query caches the two networks
+independently. `PaperList` toggles B with a per-row button, and the URL adds
+`paper2`/`node2`; a history entry is pushed when either root changes.
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to

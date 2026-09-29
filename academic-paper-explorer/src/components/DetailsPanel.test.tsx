@@ -19,6 +19,7 @@ beforeEach(() => {
   useUiStore.setState({
     selectedPaper: { id: 'p1', title: 'T', citation_count: 0, authors: '', source: 'semantic_scholar' },
     selectedNodeId: null,
+    compareSelectedNodeId: null,
   })
 })
 
@@ -42,5 +43,12 @@ describe('DetailsPanel notes', () => {
     fireEvent.change(screen.getByPlaceholderText('记录想法…'), { target: { value: '' } })
     expect(useNotesStore.getState().notes.p1).toBeUndefined()
     expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+  })
+
+  it('prefers the most recently clicked (compare) node', () => {
+    useNotesStore.setState({ notes: { a: 'note-a', b: 'note-b' } })
+    useUiStore.setState({ selectedNodeId: 'a', compareSelectedNodeId: 'b' })
+    render(<DetailsPanel />)
+    expect((screen.getByPlaceholderText('记录想法…') as HTMLTextAreaElement).value).toBe('note-b')
   })
 })

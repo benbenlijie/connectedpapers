@@ -37,12 +37,19 @@ function paintRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w
   }
 }
 
-const NetworkGraph: React.FC = () => {
+interface NetworkGraphProps {
+  paper?: Paper | null
+  slot?: 'primary' | 'compare'
+}
+
+const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) => {
   const {
     selectedPaper,
     selectedNodeId,
     setSelectedNodeId,
     selectRootPaper,
+    compareSelectedNodeId,
+    setCompareSelectedNodeId,
     filters,
     graphView,
     colorMode,
@@ -55,7 +62,24 @@ const NetworkGraph: React.FC = () => {
     graphMaxNodes,
   } = useUiStore()
 
-  const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
+  const isCompare = slot === 'compare'
+  const rootPaper = paper !== undefined ? paper : selectedPaper
+  const activeSelectionId = isCompare ? compareSelectedNodeId : selectedNodeId
+
+  const selectNode = useCallback(
+    (id: string | null) => {
+      if (isCompare) {
+        setCompareSelectedNodeId(id)
+        if (id !== null) setSelectedNodeId(null)
+      } else {
+        setSelectedNodeId(id)
+        if (id !== null) setCompareSelectedNodeId(null)
+      }
+    },
+    [isCompare, setCompareSelectedNodeId, setSelectedNodeId],
+  )
+
+  const { data: networkData, isLoading, error } = usePaperNetwork(rootPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
   const notes = useNotesStore((s) => s.notes)
   const markedIds = useMemo(() => annotatedIds(notes), [notes])
@@ -124,7 +148,7 @@ const NetworkGraph: React.FC = () => {
     [filteredNodes, filteredEdges, colorMode, sizeMode],
   )
 
-  const rootTitle = selectedPaper?.title || undefined
+  const rootTitle = rootPaper?.title || undefined
 
   const handleExportPng = useCallback(() => {
     const canvas = containerElRef.current?.querySelector('canvas') as HTMLCanvasElement | null
@@ -143,7 +167,7 @@ const NetworkGraph: React.FC = () => {
     downloadText(exportFilename(rootTitle, 'json'), JSON.stringify(payload, null, 2), 'application/json')
   }, [networkData, rootTitle])
 
-  const activeId = hoverNode?.id ?? selectedNodeId ?? null
+  const activeId = hoverNode?.id ?? activeSelectionId ?? null
 
   const { neighborIds, linkKeys } = useMemo(() => {
     const nIds = new Set<string>()
@@ -176,26 +200,26 @@ const NetworkGraph: React.FC = () => {
   // the whole three.js node object set every frame.
   const selectedNeighborIds = useMemo(() => {
     const ids = new Set<string>()
-    if (!selectedNodeId) return ids
-    ids.add(selectedNodeId)
+    if (!activeSelectionId) return ids
+    ids.add(activeSelectionId)
     for (const link of graphData.links) {
       const s = linkEndId(link.source)
       const t = linkEndId(link.target)
-      if (s === selectedNodeId) ids.add(t)
-      if (t === selectedNodeId) ids.add(s)
+      if (s === activeSelectionId) ids.add(t)
+      if (t === activeSelectionId) ids.add(s)
     }
     return ids
-  }, [graphData, selectedNodeId])
+  }, [graphData, activeSelectionId])
 
   const labelIds3d = useMemo(
     () =>
       pickVisibleLabels(graphData.nodes, {
-        activeId: selectedNodeId,
+        activeId: activeSelectionId,
         neighborIds: selectedNeighborIds,
         globalScale: 2,
         limit: 15,
       }),
-    [graphData, selectedNodeId, selectedNeighborIds],
+    [graphData, activeSelectionId, selectedNeighborIds],
   )
 
   const rebuildFromNode = useCallback(
@@ -216,12 +240,17 @@ const NetworkGraph: React.FC = () => {
       }
       selectRootPaper(paper)
       setSelectedNodeId(null)
+      setCompareSelectedNodeId(null)
     },
-    [selectRootPaper, setSelectedNodeId],
+    [selectRootPaper, setSelectedNodeId, setCompareSelectedNodeId],
   )
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
+      if (isCompare) {
+        selectNode(node.id)
+        return
+      }
       const now = Date.now()
       const prev = lastClick.current
       if (prev && prev.id === node.id && now - prev.t < 320) {
@@ -230,9 +259,9 @@ const NetworkGraph: React.FC = () => {
         return
       }
       lastClick.current = { id: node.id, t: now }
-      setSelectedNodeId(node.id)
+      selectNode(node.id)
     },
-    [rebuildFromNode, setSelectedNodeId],
+    [isCompare, rebuildFromNode, selectNode],
   )
 
   const paintNode = useCallback(
@@ -241,7 +270,7 @@ const NetworkGraph: React.FC = () => {
       const y = node.y ?? 0
       const dim = activeId !== null && !neighborIds.has(node.id)
 
-      if (node.isRoot || selectedNodeId === node.id) {
+      if (node.isRoot || activeSelectionId === node.id) {
         ctx.globalAlpha = dim ? 0.12 : 0.35
         ctx.beginPath()
         ctx.arc(x, y, node.size + 4 / globalScale, 0, 2 * Math.PI)
@@ -254,8 +283,8 @@ const NetworkGraph: React.FC = () => {
       ctx.arc(x, y, node.size, 0, 2 * Math.PI)
       ctx.fillStyle = node.color
       ctx.fill()
-      ctx.lineWidth = (node.isRoot ? 2.5 : selectedNodeId === node.id ? 2 : 1.25) / globalScale
-      ctx.strokeStyle = node.isRoot ? '#ff6b35' : selectedNodeId === node.id ? '#ffd700' : 'rgba(9,14,20,0.9)'
+      ctx.lineWidth = (node.isRoot ? 2.5 : activeSelectionId === node.id ? 2 : 1.25) / globalScale
+      ctx.strokeStyle = node.isRoot ? '#ff6b35' : activeSelectionId === node.id ? '#ffd700' : 'rgba(9,14,20,0.9)'
       ctx.stroke()
 
       if (markedIds.has(node.id)) {
@@ -302,7 +331,7 @@ const NetworkGraph: React.FC = () => {
       }
       ctx.globalAlpha = 1
     },
-    [activeId, neighborIds, selectedNodeId, priorityLabelIds, zoomLabelIds, markedIds],
+    [activeId, neighborIds, activeSelectionId, priorityLabelIds, zoomLabelIds, markedIds],
   )
 
   const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
@@ -342,7 +371,7 @@ const NetworkGraph: React.FC = () => {
     linkDirectionalArrowColor: linkColor,
     onNodeClick: handleNodeClick,
     onNodeHover: (n: GraphNode | null) => setHoverNode(n),
-    onBackgroundClick: () => setSelectedNodeId(null),
+    onBackgroundClick: () => selectNode(null),
     onRenderFramePre: () => {
       labelRectsRef.current = []
     },
@@ -488,17 +517,22 @@ const NetworkGraph: React.FC = () => {
       )}
 
       <GraphToolbar
+        placement={isCompare ? 'bottom-left' : 'top-left'}
         onExportPng={handleExportPng}
         onExportJsonVisible={handleExportJsonVisible}
         onExportJsonFull={handleExportJsonFull}
       />
-      <GraphLegend nodes={graphData.nodes} />
-      <GraphTimeline minYear={minYear} maxYear={maxYear} />
+      {!isCompare && <GraphLegend nodes={graphData.nodes} />}
+      {!isCompare && <GraphTimeline minYear={minYear} maxYear={maxYear} />}
       {graphView === '2d' && engineTick > 0 && (
-        <GraphMinimap nodes={graphData.nodes} selectedId={selectedNodeId} onSelect={handleMinimapSelect} />
+        <GraphMinimap nodes={graphData.nodes} selectedId={activeSelectionId} onSelect={handleMinimapSelect} />
       )}
 
-      <div className="absolute right-4 top-4 z-10 rounded-lg bg-gray-800/90 px-3 py-2 text-xs text-white">
+      <div
+        className={`absolute z-10 rounded-lg bg-gray-800/90 px-3 py-2 text-xs text-white ${
+          isCompare ? 'bottom-4 right-4' : 'right-4 top-4'
+        }`}
+      >
         {filteredNodes.length} 节点 · {filteredEdges.length} 边
       </div>
 

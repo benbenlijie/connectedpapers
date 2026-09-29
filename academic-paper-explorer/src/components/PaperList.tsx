@@ -1,5 +1,5 @@
 import React from 'react'
-import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle } from 'lucide-react'
+import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
@@ -8,6 +8,8 @@ const PaperList: React.FC = () => {
   const {
     selectedPaper,
     selectRootPaper,
+    comparePaper,
+    setComparePaper,
     filters,
     submittedQuery
   } = useUiStore()
@@ -143,6 +145,7 @@ const PaperList: React.FC = () => {
               className={`
                 p-4 bg-gray-700 hover:bg-gray-600 rounded-lg cursor-pointer transition-all duration-200
                 ${selectedPaper?.id === paper.id ? 'ring-2 ring-blue-500 bg-gray-600' : ''}
+                ${comparePaper?.id === paper.id ? 'ring-2 ring-cyan-400' : ''}
               `}
             >
               {/* 标题和源标识 */}
@@ -150,6 +153,21 @@ const PaperList: React.FC = () => {
                 <h3 className="text-sm font-medium text-white line-clamp-2 flex-1">
                   {paper.title}
                 </h3>
+                <button
+                  type="button"
+                  aria-label="对比"
+                  aria-pressed={comparePaper?.id === paper.id}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setComparePaper(comparePaper?.id === paper.id ? null : paper)
+                  }}
+                  className={`ml-2 flex-shrink-0 rounded p-1 hover:bg-gray-500 ${
+                    comparePaper?.id === paper.id ? 'text-blue-400' : 'text-gray-400'
+                  }`}
+                  title="加入对比"
+                >
+                  <GitCompare className="w-4 h-4" />
+                </button>
                 <span className={`ml-2 px-2 py-1 text-xs text-white rounded ${getSourceBadgeColor(paper.source)}`}>
                   {paper.source.replace('_', ' ').toUpperCase()}
                 </span>

@@ -21,9 +21,23 @@ describe('urlState', () => {
       minCitations: 42,
       selectedFields: ['Physics', 'Biology'],
       selectedVenues: ['Nature'],
+      comparePaperId: 'ABC',
+      compareSelectedNodeId: 's2:b',
     }
     const parsed = parseUrlState(serializeUrlState(state))
     expect(parsed).toEqual(state)
+  })
+
+  it('omits compare params when unset', () => {
+    const params = new URLSearchParams(serializeUrlState({ ...defaultUrlState(), paperId: 'A' }))
+    expect(params.has('paper2')).toBe(false)
+    expect(params.has('node2')).toBe(false)
+  })
+
+  it('parses compare params', () => {
+    const parsed = parseUrlState('paper=A&paper2=B&node2=n2')
+    expect(parsed.comparePaperId).toBe('B')
+    expect(parsed.compareSelectedNodeId).toBe('n2')
   })
 
   it('omits default-valued fields', () => {
