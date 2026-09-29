@@ -13,6 +13,7 @@ Academic Paper Explorer 是一个学术论文搜索与引用关系网络可视�
 - **双论文对比**：将第二篇论文加入对比，左右并排展示两张引用网络图（共享过滤/编码，各自选中高亮）。
 - **应用内阅读（arXiv HTML）**：有 arXiv 版的论文可在 `/read/:arxivId` 全屏阅读 HTML 正文（带章节大纲），无需离开应用；无 HTML 版回退到 arXiv abs/PDF 链接。
 - **沉浸式翻译**：阅读器内一键双语对照，译文显示在每段下方（可逐段折叠）；走可配置 provider（浏览器内置 Translator 或后端 LLM），失败自动降级。
+- **AI 阅读辅助**：阅读器中选中文本可让 AI 解释/总结/提问（需配置后端 LLM provider）。
 - **本地优先**：单进程本地服务，数据落盘到本地 SQLite，无需外部后端服务。
 
 ## 技术栈
@@ -96,6 +97,7 @@ LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1",
 - `POST /api/network` — 获取/构建引用网络
 - `GET /api/jobs/:id` — 查询异步任务状态
 - `POST /api/translate` — 批量翻译（走可配置的 LLM provider）
+- `POST /api/ai` — 阅读辅助问答（解释 / 总结 / 提问）
 - `GET /api/llm/status` — 查询可用的 LLM/翻译 provider 候选
 
 静态前端由同一进程托管。

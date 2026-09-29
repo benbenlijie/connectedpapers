@@ -72,10 +72,12 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `graph.ts` | BFS crawl batcher + `pagerank` + `connectedComponents`. |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
 | `llm.ts` | Configurable LLM providers (`LLM_PROVIDERS`), `chat` against OpenAI-compatible endpoints. |
+| `ai.ts` | Pure AI prompt construction (`explain`/`summarize`/`ask`). |
 | `translate.ts` | Translation prompt construction + tolerant JSON-array parsing. |
 | `translation-cache.ts` | Translation cache keyed by `(target, source)`. |
 | `routes/llm.ts` | `GET /api/llm/status`: public provider list (no secrets). |
 | `routes/translate.ts` | `POST /api/translate`: cache + batch translate through a provider. |
+| `routes/ai.ts` | `POST /api/ai`: explain/summarize/ask over an openai provider. |
 | `db-queries.ts` | `queryHash`, `getCachedNetwork`, `cacheNetwork`, `logSearch`. |
 | `db.ts` | SQLite handle + schema application. |
 | `config.ts` | Typed config (crawl limits, cache TTL/version, upstream bases, server). |
@@ -100,6 +102,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `lib/article.ts` | Pure arXiv URL builders, HTML sanitizer and outline extraction. |
 | `lib/readerBlocks.ts` | Pure block selection + bilingual translation DOM helpers. |
 | `lib/translator.ts` | Client provider orchestration: browser built-in + `/api/translate`, with fallback + cache. |
+| `lib/ai.ts` | Client provider orchestration for `/api/ai` (openai providers, fallback). |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
@@ -256,6 +259,17 @@ reader runs translations in batches of 15 with a cancel flag, shows
 `done/total` progress, re-runs on target change, and disables the toggle when no
 provider is configured. A one-time click listener toggles individual
 translations.
+
+### 13. AI Q&A in the reader
+
+`server/ai.ts` builds prompts for `explain` / `summarize` / `ask` (answer
+language fixed by `target`, optional paper context, excerpt and question), and
+`routes/ai.ts` runs them through an openai provider via `chat`. The reader's
+collapsible "AI 助手" panel captures the iframe selection on `mouseup` and calls
+`lib/ai.ts:askAi`, which walks the openai providers from `/api/llm/status`
+(client-side fallback, same pattern as translation) and returns
+`{ answer, provider }`. The panel is disabled unless an openai provider exists,
+since the browser translator cannot answer questions.
 
 ## Data model
 
