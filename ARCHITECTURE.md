@@ -98,6 +98,8 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `pages/HomePage.tsx` | Explorer layout: search, list, graph, details, filters. |
 | `pages/ReaderPage.tsx` | `/read/:arxivId` full-screen arXiv HTML reader (fetch, sanitize, outline, sandboxed iframe). |
 | `lib/article.ts` | Pure arXiv URL builders, HTML sanitizer and outline extraction. |
+| `lib/readerBlocks.ts` | Pure block selection + bilingual translation DOM helpers. |
+| `lib/translator.ts` | Client provider orchestration: browser built-in + `/api/translate`, with fallback + cache. |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
@@ -240,6 +242,20 @@ execution while letting the parent read the DOM for outline jumps today and
 translation injection later. `normalizeS2Paper` now exposes `arxiv_id`
 (`externalIds.ArXiv`); the details panel links to the reader when present, and
 the page falls back to arXiv abs/PDF links when no HTML build exists.
+
+### 12. Immersive paragraph translation
+
+`lib/readerBlocks.ts` collects text-bearing blocks from the reader's
+`contentDocument` (skipping nested, numeric-only, already-CJK, and already-
+translated nodes) and inserts a `data-cn-translation` block after each source
+block (inside table cells). `lib/translator.ts` orchestrates providers: it serves
+an in-memory `target\ntext` cache, then walks `/api/llm/status` order — `browser`
+entries use the built-in `Translator` API locally, `openai` entries post
+`/api/translate` — advancing on failure and throwing only when all fail. The
+reader runs translations in batches of 15 with a cancel flag, shows
+`done/total` progress, re-runs on target change, and disables the toggle when no
+provider is configured. A one-time click listener toggles individual
+translations.
 
 ## Data model
 
