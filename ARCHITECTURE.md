@@ -83,12 +83,14 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `hooks/useSearchPapers.ts` | React Query wrapper for `POST /api/search`. |
 | `hooks/usePaperDetails.ts` | React Query wrapper for `POST /api/details`. |
 | `hooks/usePaperNetwork.ts` | React Query wrapper for the network job; picks adaptive depth/maxNodes. |
+| `hooks/useUrlSync.ts` | Two-way sync between the UI store and the address bar (deep links). |
 | `graph/encoding.ts` | Pure color/size encoding by dimension (cluster/year/field, citations/pagerank). |
 | `graph/graphFilters.ts` | Pure timeline/year/citations/field/venue filtering + dangling-edge removal. |
 | `graph/graphAdapter.ts` | Pure adapter to the force-graph `{nodes, links}` shape. |
+| `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
-| `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline. |
+| `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline, explicit network params. |
 
 ## Key design decisions
 
@@ -140,6 +142,26 @@ OpenAlex-only ids (`W\d+`) are not valid Semantic Scholar lookup keys.
 `openalex.ts:getWorkByOpenAlexId`, and rewrites to `DOI:<doi>` (or `ARXIV:<id>`),
 raising `PAPER_FETCH_FAILED` if the work has no DOI/arXiv id. All other id kinds
 pass through `resolvePaperId(...).s2Path` unchanged.
+
+### 6. Deep-link URL state
+
+`graph/urlState.ts` is a pure codec: `serializeUrlState` writes the view state to
+a query string with defaults omitted, and `parseUrlState` reads it back leniently
+(clamping `depth` to 1–3 and `maxNodes` to 1–300, ignoring invalid values).
+`hooks/useUrlSync.ts` runs two effects: URL → store on mount and on popstate, and
+store → URL via a `useUiStore.subscribe` listener. A `lastWritten` ref holds the
+last query string the hook wrote, so the read effect skips re-hydrating its own
+navigation (breaking the feedback loop), and a `hydrated` ref prevents the first
+default-state write from clobbering an incoming link. Root-paper changes push a
+history entry while filter/encoding changes replace, so the browser back button
+steps between papers but not between slider frames.
+
+The URL carries the resolved root id plus the explicit `depth`/`maxNodes`, so the
+same link rebuilds the same cached network regardless of `usePaperNetwork`'s
+adaptive defaults. On load the hook installs a minimal `paperStubFromId(id)` so
+`DetailsPanel`'s existing `usePaperDetails` call fills in the full record.
+`selectRootPaper` (used by list clicks and double-click rebuild) clears the
+explicit network params so a freshly chosen paper gets adaptive defaults again.
 
 ## Data model
 

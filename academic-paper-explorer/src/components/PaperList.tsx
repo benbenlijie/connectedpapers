@@ -7,7 +7,7 @@ import { Paper } from '../types/domain'
 const PaperList: React.FC = () => {
   const {
     selectedPaper,
-    setSelectedPaper,
+    selectRootPaper,
     filters,
     submittedQuery
   } = useUiStore()
@@ -55,7 +55,7 @@ const PaperList: React.FC = () => {
   })
 
   const handlePaperSelect = (paper: Paper) => {
-    setSelectedPaper(paper)
+    selectRootPaper(paper)
   }
 
   const formatAuthors = (authors: string) => {

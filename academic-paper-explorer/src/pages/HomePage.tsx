@@ -6,10 +6,12 @@ import DetailsPanel from '../components/DetailsPanel'
 import FilterPanel from '../components/FilterPanel'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
+import { useUrlSync } from '../hooks/useUrlSync'
 
 const HomePage: React.FC = () => {
-  const { selectedPaper } = useUiStore()
-  const { data: networkData } = usePaperNetwork(selectedPaper)
+  const { selectedPaper, graphDepth, graphMaxNodes } = useUiStore()
+  useUrlSync()
+  const { data: networkData } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
   return (
     <div className="h-screen flex flex-col">
