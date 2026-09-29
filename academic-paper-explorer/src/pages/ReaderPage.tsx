@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, FileText, Loader2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, FileText, Loader2, Languages } from 'lucide-react'
 import {
   arxivAbsUrl,
   arxivHtmlUrl,
@@ -9,16 +9,43 @@ import {
   sanitizeArticleHtml,
   type OutlineItem,
 } from '../lib/article'
+import { fetchProviders, translate, chunk, type PublicProvider } from '../lib/translator'
+import {
+  collectBlocks,
+  ensureTranslationStyle,
+  insertTranslation,
+  markBlock,
+  removeTranslations,
+  SOURCE_ATTR,
+  TRANSLATION_ATTR,
+} from '../lib/readerBlocks'
 
 type Status = 'loading' | 'ready' | 'error'
+
+const TARGETS: { value: string; label: string }[] = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+]
+
+const BATCH_SIZE = 15
 
 const ReaderPage: React.FC = () => {
   const { arxivId } = useParams<{ arxivId: string }>()
   const navigate = useNavigate()
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const cancelRef = useRef(false)
   const [status, setStatus] = useState<Status>('loading')
   const [html, setHtml] = useState('')
   const [outline, setOutline] = useState<OutlineItem[]>([])
+
+  const [providers, setProviders] = useState<PublicProvider[]>([])
+  const [providersReady, setProvidersReady] = useState(false)
+  const [target, setTarget] = useState('zh')
+  const [translated, setTranslated] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [translateError, setTranslateError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!arxivId) {
@@ -47,12 +74,107 @@ const ReaderPage: React.FC = () => {
     }
   }, [arxivId])
 
+  useEffect(() => {
+    let cancelled = false
+    fetchProviders()
+      .then((list) => {
+        if (!cancelled) setProviders(list)
+      })
+      .catch(() => {
+        if (!cancelled) setProviders([])
+      })
+      .finally(() => {
+        if (!cancelled) setProvidersReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const jumpTo = useCallback((id: string) => {
     frameRef.current?.contentDocument?.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  const handleFrameLoad = useCallback(() => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc) return
+    doc.addEventListener('click', (e) => {
+      const node = (e.target as Element | null)?.closest?.(`[${TRANSLATION_ATTR}]`) as HTMLElement | null
+      if (node) node.style.display = node.style.display === 'none' ? '' : 'none'
+    })
+  }, [])
+
+  const untranslate = useCallback(() => {
+    const doc = frameRef.current?.contentDocument
+    if (doc) removeTranslations(doc)
+    setTranslated(false)
+    setProgress({ done: 0, total: 0 })
+    setTranslateError(null)
+  }, [])
+
+  const runTranslate = useCallback(
+    async (lang: string, doc: Document, blocks: Element[]) => {
+      setTranslating(true)
+      setTranslateError(null)
+      setProgress({ done: 0, total: blocks.length })
+      ensureTranslationStyle(doc)
+      blocks.forEach((el, i) => markBlock(el, String(i)))
+      cancelRef.current = false
+      let done = 0
+      try {
+        for (const batch of chunk(blocks, BATCH_SIZE)) {
+          if (cancelRef.current) break
+          const texts = batch.map((el) => (el.textContent ?? '').trim())
+          const result = await translate(texts, lang)
+          if (cancelRef.current) break
+          batch.forEach((el, k) => insertTranslation(doc, el, markId(el), result.translations[k]))
+          done += batch.length
+          setProgress({ done, total: blocks.length })
+        }
+        setTranslated(true)
+      } catch (e) {
+        setTranslateError(e instanceof Error ? e.message : '翻译失败')
+      } finally {
+        setTranslating(false)
+      }
+    },
+    [],
+  )
+
+  const toggleTranslate = useCallback(() => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc) return
+    if (translated || translating) {
+      cancelRef.current = true
+      untranslate()
+      return
+    }
+    const blocks = collectBlocks(doc)
+    if (blocks.length === 0) return
+    void runTranslate(target, doc, blocks)
+  }, [translated, translating, target, untranslate, runTranslate])
+
+  const onTargetChange = useCallback(
+    (value: string) => {
+      setTarget(value)
+      const doc = frameRef.current?.contentDocument
+      if (translated && doc) {
+        removeTranslations(doc)
+        setTranslated(false)
+        const blocks = collectBlocks(doc)
+        if (blocks.length > 0) void runTranslate(value, doc, blocks)
+      }
+    },
+    [translated, runTranslate],
+  )
+
+  useEffect(() => () => {
+    cancelRef.current = true
+  }, [])
+
   const abs = arxivId ? arxivAbsUrl(arxivId) : '#'
   const pdf = arxivId ? arxivPdfUrl(arxivId) : '#'
+  const noProviders = providersReady && providers.length === 0
 
   return (
     <div className="flex h-screen flex-col bg-gray-900 text-white">
@@ -68,6 +190,36 @@ const ReaderPage: React.FC = () => {
           <span className="truncate text-sm text-gray-300">arXiv:{arxivId}</span>
         </div>
         <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleTranslate}
+              disabled={status !== 'ready' || noProviders}
+              title={noProviders ? '未配置可用的翻译 provider' : undefined}
+              className="flex items-center gap-1 rounded bg-purple-600 px-3 py-1 text-white hover:bg-purple-500 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400"
+            >
+              {translating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Languages className="h-3 w-3" />}
+              {translated ? '隐藏译文' : '翻译'}
+            </button>
+            <select
+              aria-label="目标语言"
+              value={target}
+              onChange={(e) => onTargetChange(e.target.value)}
+              disabled={translating}
+              className="rounded bg-gray-700 px-2 py-1 text-sm"
+            >
+              {TARGETS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            {translating && (
+              <span className="text-xs text-gray-400">
+                {progress.done}/{progress.total}
+              </span>
+            )}
+          </div>
           <a
             href={abs}
             target="_blank"
@@ -86,6 +238,12 @@ const ReaderPage: React.FC = () => {
           </a>
         </div>
       </header>
+
+      {translateError && (
+        <div className="border-b border-red-800 bg-red-900/40 px-4 py-1 text-xs text-red-300">
+          翻译失败：{translateError}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-800 p-3">
@@ -149,12 +307,17 @@ const ReaderPage: React.FC = () => {
               className="h-full w-full border-0"
               sandbox="allow-same-origin"
               srcDoc={html}
+              onLoad={handleFrameLoad}
             />
           )}
         </main>
       </div>
     </div>
   )
+}
+
+function markId(el: Element): string {
+  return el.getAttribute(SOURCE_ATTR) ?? ''
 }
 
 export default ReaderPage

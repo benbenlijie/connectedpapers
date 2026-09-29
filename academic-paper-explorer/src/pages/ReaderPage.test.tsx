@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ReaderPage from './ReaderPage'
 
@@ -21,10 +21,16 @@ function renderReader(path = '/read/2401.00001') {
   )
 }
 
+let mockProviders: { name: string; kind: string }[] = []
+
 beforeEach(() => {
-  globalThis.fetch = vi.fn(async () =>
-    ({ ok: true, text: async () => ARTICLE }) as unknown as Response,
-  ) as unknown as typeof fetch
+  mockProviders = []
+  globalThis.fetch = vi.fn(async (url: unknown) => {
+    if (String(url).includes('/api/llm/status')) {
+      return { ok: true, json: async () => ({ data: { providers: mockProviders } }) } as unknown as Response
+    }
+    return { ok: true, text: async () => ARTICLE } as unknown as Response
+  }) as unknown as typeof fetch
 })
 
 afterEach(() => {
@@ -53,5 +59,17 @@ describe('ReaderPage', () => {
     await screen.findByTestId('reader-frame')
     const links = screen.getAllByRole('link')
     expect(links.some((l) => l.getAttribute('href') === 'https://arxiv.org/pdf/2401.00001')).toBe(true)
+  })
+
+  it('disables translation when no provider is configured', async () => {
+    renderReader()
+    await screen.findByTestId('reader-frame')
+    await waitFor(() => expect(screen.getByRole('button', { name: '翻译' })).toBeDisabled())
+  })
+
+  it('enables translation when a provider is configured', async () => {
+    mockProviders = [{ name: 'browser', kind: 'browser' }]
+    renderReader()
+    await waitFor(() => expect(screen.getByRole('button', { name: '翻译' })).toBeEnabled())
   })
 })
