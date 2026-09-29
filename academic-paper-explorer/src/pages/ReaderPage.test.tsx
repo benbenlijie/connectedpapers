@@ -72,4 +72,16 @@ describe('ReaderPage', () => {
     renderReader()
     await waitFor(() => expect(screen.getByRole('button', { name: '翻译' })).toBeEnabled())
   })
+
+  it('disables the AI assistant when no openai provider is configured', async () => {
+    mockProviders = [{ name: 'browser', kind: 'browser' }]
+    renderReader()
+    await waitFor(() => expect(screen.getByRole('button', { name: /AI 助手/ })).toBeDisabled())
+  })
+
+  it('enables the AI assistant with an openai provider', async () => {
+    mockProviders = [{ name: 'mtcode', kind: 'openai' }]
+    renderReader()
+    await waitFor(() => expect(screen.getByRole('button', { name: /AI 助手/ })).toBeEnabled())
+  })
 })
