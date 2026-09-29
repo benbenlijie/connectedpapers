@@ -13,6 +13,7 @@ export type Paper = {
   url?: string
   pdf_url?: string
   doi?: string
+  arxiv_id?: string
   fields_of_study?: string[]
   page_rank_score?: number
   cluster_id?: number
@@ -56,6 +57,7 @@ export type PaperDetails = {
     url?: string
     pdf_url?: string
     doi?: string
+    arxiv_id?: string
     fields_of_study?: string[]
     references?: Array<{ paperId: string; title: string; year?: number; citationCount?: number }>
     citations?: Array<{ paperId: string; title: string; year?: number; citationCount?: number }>

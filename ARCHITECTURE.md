@@ -95,6 +95,9 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `graph/graphFilters.ts` | Pure timeline/year/citations/field/venue filtering + dangling-edge removal. |
 | `graph/graphAdapter.ts` | Pure adapter to the force-graph `{nodes, links}` shape. |
 | `graph/exportGraph.ts` | Pure export payload/filename helpers plus thin PNG/JSON download glue. |
+| `pages/HomePage.tsx` | Explorer layout: search, list, graph, details, filters. |
+| `pages/ReaderPage.tsx` | `/read/:arxivId` full-screen arXiv HTML reader (fetch, sanitize, outline, sandboxed iframe). |
+| `lib/article.ts` | Pure arXiv URL builders, HTML sanitizer and outline extraction. |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
@@ -221,6 +224,22 @@ fallback lives on the client: it walks the `/api/llm/status` order, handles
 `kind: "browser"` locally, and posts `/api/translate` with an explicit provider
 for `kind: "openai"` entries, advancing on failure. The cache key is
 `hash(target|source)` so results are reused across providers.
+
+### 11. In-app arXiv HTML reader
+
+`/read/:arxivId` renders the paper's arXiv HTML (ar5iv/LaTeXML) instead of the
+PDF: structured paragraphs make translation and AI annotation tractable, and
+arxiv.org serves it with `access-control-allow-origin: *`, so no proxy is needed.
+`lib/article.ts` sanitizes third-party HTML (drops `script`/`iframe`/`object`/
+`embed`/`noscript`, strips `on*` handlers and `javascript:` URLs, injects
+`<base href="https://arxiv.org/">`) and extracts an outline. LaTeXML puts the
+anchor id on the enclosing `<section>`, not the heading, so `extractOutline`
+handles both. The sanitized document is rendered in an
+`<iframe sandbox="allow-same-origin">` (no `allow-scripts`), which blocks script
+execution while letting the parent read the DOM for outline jumps today and
+translation injection later. `normalizeS2Paper` now exposes `arxiv_id`
+(`externalIds.ArXiv`); the details panel links to the reader when present, and
+the page falls back to arXiv abs/PDF links when no HTML build exists.
 
 ## Data model
 

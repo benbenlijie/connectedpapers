@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
@@ -56,6 +57,8 @@ const DetailsPanel: React.FC = () => {
 
   const paper = paperDetails?.paper || selectedPaper
   if (!paper) return null
+
+  const arxivId = (paper as { arxiv_id?: string }).arxiv_id
 
   const metrics = paperDetails?.metrics
   const recommendations = paperDetails?.recommendations || []
@@ -192,6 +195,15 @@ const DetailsPanel: React.FC = () => {
 
         {/* 链接 */}
         <div className="space-y-2">
+          {arxivId && (
+            <Link
+              to={`/read/${encodeURIComponent(arxivId)}`}
+              className="flex items-center space-x-2 text-purple-400 hover:text-purple-300 text-sm"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>在应用内阅读（arXiv HTML）</span>
+            </Link>
+          )}
           {paper.url && (
             <a
               href={paper.url}

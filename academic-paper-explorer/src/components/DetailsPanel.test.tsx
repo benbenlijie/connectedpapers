@@ -1,9 +1,12 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import DetailsPanel from './DetailsPanel'
 import { useUiStore } from '../store/useUiStore'
 import { useNotesStore } from '../store/useNotesStore'
+
+const renderPanel = () => render(<MemoryRouter><DetailsPanel /></MemoryRouter>)
 
 vi.mock('../hooks/usePaperDetails', () => ({
   usePaperDetails: () => ({ data: undefined, isLoading: false, error: null }),
@@ -26,7 +29,7 @@ beforeEach(() => {
 describe('DetailsPanel notes', () => {
   it('shows the existing note and persists edits', () => {
     useNotesStore.setState({ notes: { p1: 'my thought' } })
-    render(<DetailsPanel />)
+    renderPanel()
 
     const box = screen.getByPlaceholderText('记录想法…') as HTMLTextAreaElement
     expect(box.value).toBe('my thought')
@@ -39,7 +42,7 @@ describe('DetailsPanel notes', () => {
 
   it('hides the saved hint when the note is cleared', () => {
     useNotesStore.setState({ notes: { p1: 'my thought' } })
-    render(<DetailsPanel />)
+    renderPanel()
     fireEvent.change(screen.getByPlaceholderText('记录想法…'), { target: { value: '' } })
     expect(useNotesStore.getState().notes.p1).toBeUndefined()
     expect(screen.queryByText('已保存')).not.toBeInTheDocument()
@@ -48,7 +51,17 @@ describe('DetailsPanel notes', () => {
   it('prefers the most recently clicked (compare) node', () => {
     useNotesStore.setState({ notes: { a: 'note-a', b: 'note-b' } })
     useUiStore.setState({ selectedNodeId: 'a', compareSelectedNodeId: 'b' })
-    render(<DetailsPanel />)
+    renderPanel()
     expect((screen.getByPlaceholderText('记录想法…') as HTMLTextAreaElement).value).toBe('note-b')
+  })
+
+  it('links to the in-app reader when the paper has an arXiv id', () => {
+    useUiStore.setState({
+      selectedPaper: {
+        id: 'p1', title: 'T', citation_count: 0, authors: '', source: 'semantic_scholar', arxiv_id: '2401.00001',
+      },
+    })
+    renderPanel()
+    expect(screen.getByRole('link', { name: /在应用内阅读/ })).toHaveAttribute('href', '/read/2401.00001')
   })
 })
