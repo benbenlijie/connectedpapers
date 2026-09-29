@@ -62,6 +62,9 @@ describe('DetailsPanel notes', () => {
       },
     })
     renderPanel()
-    expect(screen.getByRole('link', { name: /在应用内阅读/ })).toHaveAttribute('href', '/read/2401.00001')
+    expect(screen.getByRole('link', { name: /在应用内阅读/ })).toHaveAttribute(
+      'href',
+      '/read/2401.00001?pid=p1',
+    )
   })
 })

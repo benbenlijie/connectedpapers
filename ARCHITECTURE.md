@@ -108,7 +108,9 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
 | `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline, explicit network params. |
 | `store/useNotesStore.ts` | Zustand store for per-paper notes, persisted to `localStorage`. |
+| `store/useReadingStore.ts` | Zustand store for reading status/progress, persisted to `localStorage`. |
 | `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
+| `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
 
 ## Key design decisions
 
@@ -270,6 +272,17 @@ collapsible "AI 助手" panel captures the iframe selection on `mouseup` and cal
 (client-side fallback, same pattern as translation) and returns
 `{ answer, provider }`. The panel is disabled unless an openai provider exists,
 since the browser translator cannot answer questions.
+
+### 14. Reading queue and progress
+
+`lib/reading.ts` is a pure status map (`to_read`/`reading`/`done` + a clamped
+progress percent); `store/useReadingStore.ts` persists it to
+`localStorage['connectedpapers.reading.v1']`, consistent with notes. Entries are
+keyed by paper id; the reader only knows the arXiv id, so the details-panel link
+carries `?pid=<paperId>` and the reader keys on `pid ?? arxivId`. `PaperList`
+shows a per-row status select + badge and a "仅看阅读清单" filter; `ReaderPage`
+marks the paper `reading` on open (unless already `reading`/`done`) and writes a
+throttled scroll percentage from an iframe `scroll` listener.
 
 ## Data model
 

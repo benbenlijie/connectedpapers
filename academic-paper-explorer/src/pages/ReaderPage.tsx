@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ExternalLink, FileText, Loader2, Languages, Sparkles, Send } from 'lucide-react'
 import {
   arxivAbsUrl,
@@ -11,6 +11,8 @@ import {
 } from '../lib/article'
 import { fetchProviders, translate, chunk, type PublicProvider } from '../lib/translator'
 import { askAi, type AiAction } from '../lib/ai'
+import { useReadingStore } from '../store/useReadingStore'
+import { READING_STATUSES, statusLabel, type ReadingStatus } from '../lib/reading'
 import {
   collectBlocks,
   ensureTranslationStyle,
@@ -33,6 +35,10 @@ const BATCH_SIZE = 15
 
 const ReaderPage: React.FC = () => {
   const { arxivId } = useParams<{ arxivId: string }>()
+  const [searchParams] = useSearchParams()
+  const readingKey = searchParams.get('pid') || arxivId || ''
+  const readingEntry = useReadingStore((s) => s.entries[readingKey])
+  const setReadingStatus = useReadingStore((s) => s.setStatus)
   const navigate = useNavigate()
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cancelRef = useRef(false)
@@ -99,6 +105,14 @@ const ReaderPage: React.FC = () => {
     }
   }, [])
 
+  useEffect(() => {
+    if (status !== 'ready' || !readingKey) return
+    const current = useReadingStore.getState().entries[readingKey]?.status
+    if (current !== 'done' && current !== 'reading') {
+      useReadingStore.getState().setStatus(readingKey, 'reading')
+    }
+  }, [status, readingKey])
+
   const jumpTo = useCallback((id: string) => {
     frameRef.current?.contentDocument?.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
@@ -114,7 +128,18 @@ const ReaderPage: React.FC = () => {
       const text = doc.getSelection()?.toString().trim() ?? ''
       if (text) setSelection(text)
     })
-  }, [])
+    let last = 0
+    doc.addEventListener('scroll', () => {
+      const now = Date.now()
+      if (now - last < 500) return
+      last = now
+      const el = doc.documentElement
+      const max = el.scrollHeight - el.clientHeight
+      if (max > 0 && readingKey) {
+        useReadingStore.getState().setProgress(readingKey, Math.round((el.scrollTop / max) * 100))
+      }
+    }, { passive: true })
+  }, [readingKey])
 
   const untranslate = useCallback(() => {
     const doc = frameRef.current?.contentDocument
@@ -256,6 +281,22 @@ const ReaderPage: React.FC = () => {
               </span>
             )}
           </div>
+          <select
+            aria-label="阅读状态"
+            value={readingEntry?.status ?? ''}
+            onChange={(e) => setReadingStatus(readingKey, (e.target.value || null) as ReadingStatus | null)}
+            className="rounded bg-gray-700 px-2 py-1 text-sm"
+          >
+            <option value="">未标记</option>
+            {READING_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          {typeof readingEntry?.progress === 'number' && (
+            <span className="text-xs text-gray-400">{readingEntry.progress}%</span>
+          )}
           <button
             type="button"
             onClick={() => setAiOpen((o) => !o)}

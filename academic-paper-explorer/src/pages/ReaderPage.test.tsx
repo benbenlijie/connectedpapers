@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ReaderPage from './ReaderPage'
+import { useReadingStore } from '../store/useReadingStore'
 
 const ARTICLE = `<!DOCTYPE html><html><head><title>Paper</title></head><body>
   <h1 id="S1">Introduction</h1>
@@ -24,6 +25,8 @@ function renderReader(path = '/read/2401.00001') {
 let mockProviders: { name: string; kind: string }[] = []
 
 beforeEach(() => {
+  localStorage.clear()
+  useReadingStore.setState({ entries: {} })
   mockProviders = []
   globalThis.fetch = vi.fn(async (url: unknown) => {
     if (String(url).includes('/api/llm/status')) {
@@ -83,5 +86,11 @@ describe('ReaderPage', () => {
     mockProviders = [{ name: 'mtcode', kind: 'openai' }]
     renderReader()
     await waitFor(() => expect(screen.getByRole('button', { name: /AI 助手/ })).toBeEnabled())
+  })
+
+  it('marks the paper as reading when opened', async () => {
+    renderReader('/read/2401.00001?pid=p1')
+    await screen.findByTestId('reader-frame')
+    await waitFor(() => expect(useReadingStore.getState().entries.p1?.status).toBe('reading'))
   })
 })
