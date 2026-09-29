@@ -3,13 +3,19 @@ import ForceGraph2D from 'react-force-graph-2d'
 import { forceCollide } from 'd3-force'
 import { Loader2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
-import { usePaperNetwork } from '../hooks/usePaperNetwork'
+import { usePaperNetwork, networkCacheKeyForPaper } from '../hooks/usePaperNetwork'
 import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
 import { withAlpha } from '../graph/encoding'
 import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } from '../graph/exportGraph'
+import {
+  applyPositions,
+  collectPositions,
+  readNetworkPositions,
+  writeNetworkPositions,
+} from '../lib/networkCache'
 import { annotatedIds } from '../lib/notes'
 import { useNotesStore } from '../store/useNotesStore'
 import GraphToolbar from './graph/GraphToolbar'
@@ -148,10 +154,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     setTimelinePlaying(false)
   }, [networkData, setTimelineYear, setTimelinePlaying])
 
-  const graphData = useMemo(
-    () => graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode }),
-    [filteredNodes, filteredEdges, colorMode, sizeMode],
-  )
+  const cacheKey = networkCacheKeyForPaper(rootPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
+
+  const graphData = useMemo(() => {
+    const data = graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode })
+    applyPositions(data.nodes, cacheKey ? readNetworkPositions(cacheKey) : undefined)
+    return data
+  }, [filteredNodes, filteredEdges, colorMode, sizeMode, cacheKey])
+
+  const positionsSavedAt = useRef(0)
 
   const rootTitle = rootPaper?.title || undefined
 
@@ -415,6 +426,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     },
     onEngineStop: () => {
       setEngineTick((v) => v + 1)
+      const now = Date.now()
+      if (cacheKey && now - positionsSavedAt.current > 1500) {
+        positionsSavedAt.current = now
+        writeNetworkPositions(cacheKey, collectPositions(graphData.nodes))
+      }
       if (fittedRef.current !== networkData) {
         fittedRef.current = networkData
         const fg = graphView === '3d' ? fg3dRef.current : fg2dRef.current
