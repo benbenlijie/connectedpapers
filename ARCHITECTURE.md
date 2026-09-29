@@ -110,9 +110,11 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `store/useNotesStore.ts` | Zustand store for per-paper notes, persisted to `localStorage`. |
 | `store/useReadingStore.ts` | Zustand store for reading status/progress, persisted to `localStorage`. |
 | `store/useHighlightsStore.ts` | Zustand store for reader highlights, persisted to `localStorage`. |
+| `store/useSearchHistoryStore.ts` | Zustand store for recent search queries, persisted to `localStorage`. |
 | `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
 | `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
 | `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
+| `lib/searchHistory.ts` | Pure recent-query list helpers (parse/add/remove/filter). |
 
 ## Key design decisions
 
@@ -297,6 +299,15 @@ the stored offsets stay valid across reloads. `store/useHighlightsStore.ts`
 persists `localStorage['connectedpapers.highlights.v1']` per reader key;
 `ReaderPage` re-applies stored highlights on iframe load and shows a floating bar
 for creating (colour + optional note) or editing (recolour/delete) them.
+
+### 16. Search keyword history
+
+`lib/searchHistory.ts` keeps a deduped, capped (20) recent-query list;
+`store/useSearchHistoryStore.ts` persists it to
+`localStorage['connectedpapers.searchHistory.v1']` with `record`/`remove`/`clear`.
+`SearchBar` records on submit and shows a filtered dropdown on focus, where
+clicking an item re-runs the search. Dropdown items use `onMouseDown`
+preventDefault so the input keeps focus through the click.
 
 ## Data model
 

@@ -1,20 +1,34 @@
 import React, { useState } from 'react'
-import { Search, Loader2 } from 'lucide-react'
+import { Search, Loader2, History, X } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useSearchPapers } from '../hooks/useSearchPapers'
+import { useSearchHistoryStore } from '../store/useSearchHistoryStore'
+import { filterHistory } from '../lib/searchHistory'
 
 const SearchBar: React.FC = () => {
   const { submittedQuery, submitQuery } = useUiStore()
+  const entries = useSearchHistoryStore((s) => s.entries)
+  const recordHistory = useSearchHistoryStore((s) => s.record)
+  const removeHistory = useSearchHistoryStore((s) => s.remove)
+  const clearHistory = useSearchHistoryStore((s) => s.clear)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'keyword' | 'doi' | 'arxiv' | 's2_id'>('keyword')
+  const [showHistory, setShowHistory] = useState(false)
 
   const { isFetching: isSearching } = useSearchPapers(submittedQuery)
+  const suggestions = showHistory ? filterHistory(entries, searchQuery) : []
+
+  const runSearch = (query: string) => {
+    const value = query.trim()
+    if (!value) return
+    recordHistory(value)
+    submitQuery({ query: value, query_type: searchType })
+    setShowHistory(false)
+  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!searchQuery.trim()) return
-
-    submitQuery({ query: searchQuery, query_type: searchType })
+    runSearch(searchQuery)
   }
 
   const searchTypeOptions = [
@@ -65,10 +79,56 @@ const SearchBar: React.FC = () => {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onFocus={() => setShowHistory(true)}
+          onBlur={() => window.setTimeout(() => setShowHistory(false), 120)}
           placeholder={getPlaceholder()}
           className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           disabled={isSearching}
         />
+
+        {suggestions.length > 0 && (
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gray-600 bg-gray-700 shadow-lg">
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs text-gray-400">
+              <span className="flex items-center gap-1">
+                <History className="h-3 w-3" /> 搜索历史
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => clearHistory()}
+                className="hover:text-white"
+              >
+                清空
+              </button>
+            </div>
+            <ul className="max-h-64 overflow-y-auto">
+              {suggestions.map((q) => (
+                <li key={q} className="flex items-center hover:bg-gray-600">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSearchQuery(q)
+                      runSearch(q)
+                    }}
+                    className="flex-1 truncate px-3 py-1.5 text-left text-sm text-gray-100"
+                  >
+                    {q}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`删除历史 ${q}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => removeHistory(q)}
+                    className="mr-2 rounded p-1 text-gray-400 hover:bg-gray-500 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* 搜索按钮 */}
