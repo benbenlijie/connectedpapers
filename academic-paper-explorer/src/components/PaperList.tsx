@@ -1,8 +1,16 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
+import { useReadingStore } from '../store/useReadingStore'
+import { READING_STATUSES, statusLabel, type ReadingStatus } from '../lib/reading'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
+
+const STATUS_BADGE: Record<ReadingStatus, string> = {
+  to_read: 'bg-amber-600',
+  reading: 'bg-sky-600',
+  done: 'bg-emerald-600',
+}
 
 const PaperList: React.FC = () => {
   const {
@@ -13,6 +21,9 @@ const PaperList: React.FC = () => {
     filters,
     submittedQuery
   } = useUiStore()
+  const readingEntries = useReadingStore((s) => s.entries)
+  const setReadingStatus = useReadingStore((s) => s.setStatus)
+  const [onlyList, setOnlyList] = useState(false)
 
   const { data, isFetching, error, refetch } = useSearchPapers(submittedQuery)
   const searchResults = data?.papers ?? []
@@ -55,6 +66,11 @@ const PaperList: React.FC = () => {
     
     return true
   })
+
+  const paperKey = (p: Paper) => p.id || p.semantic_scholar_id || p.openalex_id || p.doi || ''
+  const visibleResults = onlyList
+    ? filteredResults.filter((p) => readingEntries[paperKey(p)])
+    : filteredResults
 
   const handlePaperSelect = (paper: Paper) => {
     selectRootPaper(paper)
@@ -124,10 +140,19 @@ const PaperList: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm text-gray-400">
             共 {searchResults.length} 篇论文
-            {filteredResults.length !== searchResults.length && (
-              <span className="text-yellow-400"> (过滤后 {filteredResults.length} 篇)</span>
+            {visibleResults.length !== searchResults.length && (
+              <span className="text-yellow-400"> (过滤后 {visibleResults.length} 篇)</span>
             )}
           </span>
+          <label className="flex cursor-pointer items-center gap-1 text-xs text-gray-400">
+            <input
+              type="checkbox"
+              checked={onlyList}
+              onChange={(e) => setOnlyList(e.target.checked)}
+              className="accent-blue-500"
+            />
+            仅看阅读清单
+          </label>
         </div>
 
         {searchWarning && (
@@ -138,7 +163,7 @@ const PaperList: React.FC = () => {
         )}
         
         <div className="space-y-3">
-          {filteredResults.map((paper) => (
+          {visibleResults.map((paper) => (
             <div
               key={paper.id || paper.semantic_scholar_id || paper.openalex_id}
               onClick={() => handlePaperSelect(paper)}
@@ -211,6 +236,38 @@ const PaperList: React.FC = () => {
                 )}
               </div>
               
+              {/* 阅读状态 */}
+              <div className="mt-2 flex items-center gap-2">
+                <select
+                  aria-label="阅读状态"
+                  value={readingEntries[paperKey(paper)]?.status ?? ''}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setReadingStatus(paperKey(paper), (e.target.value || null) as ReadingStatus | null)
+                  }}
+                  className="rounded bg-gray-600 px-1 py-0.5 text-xs text-gray-100"
+                >
+                  <option value="">未标记</option>
+                  {READING_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                {readingEntries[paperKey(paper)] && (
+                  <span
+                    className={`rounded px-2 py-0.5 text-xs text-white ${
+                      STATUS_BADGE[readingEntries[paperKey(paper)]!.status]
+                    }`}
+                  >
+                    {statusLabel(readingEntries[paperKey(paper)]!.status)}
+                    {typeof readingEntries[paperKey(paper)]!.progress === 'number' &&
+                      ` · ${readingEntries[paperKey(paper)]!.progress}%`}
+                  </span>
+                )}
+              </div>
+
               {/* 摘要预览 */}
               {paper.abstract && (
                 <p className="text-xs text-gray-400 mt-2 line-clamp-2">

@@ -2,14 +2,16 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
+const h = vi.hoisted(() => ({
+  papers: [
+    { id: 'p1', title: 'Paper One', citation_count: 0, authors: 'A', source: 'semantic_scholar' },
+    { id: 'p2', title: 'Paper Two', citation_count: 0, authors: 'B', source: 'semantic_scholar' },
+  ],
+}))
+
 vi.mock('../hooks/useSearchPapers', () => ({
   useSearchPapers: () => ({
-    data: {
-      papers: [
-        { id: 'p1', title: 'Paper One', citation_count: 0, authors: 'A', source: 'semantic_scholar' },
-      ],
-      total_count: 1,
-    },
+    data: { papers: h.papers, total_count: h.papers.length },
     isFetching: false,
     error: null,
     refetch: vi.fn(),
@@ -18,8 +20,11 @@ vi.mock('../hooks/useSearchPapers', () => ({
 
 import PaperList from './PaperList'
 import { useUiStore } from '../store/useUiStore'
+import { useReadingStore } from '../store/useReadingStore'
 
 beforeEach(() => {
+  localStorage.clear()
+  useReadingStore.setState({ entries: {} })
   useUiStore.setState({
     selectedPaper: null,
     comparePaper: null,
@@ -29,15 +34,30 @@ beforeEach(() => {
   })
 })
 
-describe('PaperList compare button', () => {
+describe('PaperList', () => {
   it('sets and clears the compare paper', () => {
     render(<PaperList />)
-    const button = screen.getByRole('button', { name: '对比' })
+    const button = screen.getAllByRole('button', { name: '对比' })[0]
 
     fireEvent.click(button)
     expect(useUiStore.getState().comparePaper?.id).toBe('p1')
 
     fireEvent.click(button)
     expect(useUiStore.getState().comparePaper).toBeNull()
+  })
+
+  it('records the reading status for a paper', () => {
+    render(<PaperList />)
+    fireEvent.change(screen.getAllByLabelText('阅读状态')[0], { target: { value: 'reading' } })
+    expect(useReadingStore.getState().entries.p1.status).toBe('reading')
+  })
+
+  it('filters to the reading list', () => {
+    useReadingStore.setState({ entries: { p1: { status: 'to_read' } } })
+    render(<PaperList />)
+    expect(screen.getByText('Paper Two')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('仅看阅读清单'))
+    expect(screen.getByText('Paper One')).toBeInTheDocument()
+    expect(screen.queryByText('Paper Two')).not.toBeInTheDocument()
   })
 })

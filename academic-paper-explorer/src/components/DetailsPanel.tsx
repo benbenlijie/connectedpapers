@@ -197,7 +197,9 @@ const DetailsPanel: React.FC = () => {
         <div className="space-y-2">
           {arxivId && (
             <Link
-              to={`/read/${encodeURIComponent(arxivId)}`}
+              to={`/read/${encodeURIComponent(arxivId)}${
+                paper.id ? `?pid=${encodeURIComponent(paper.id)}` : ''
+              }`}
               className="flex items-center space-x-2 text-purple-400 hover:text-purple-300 text-sm"
             >
               <BookOpen className="w-4 h-4" />
