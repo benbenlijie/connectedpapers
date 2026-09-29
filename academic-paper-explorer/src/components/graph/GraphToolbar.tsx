@@ -1,7 +1,13 @@
-import React from 'react'
-import { Search } from 'lucide-react'
+import React, { useState } from 'react'
+import { Search, Download } from 'lucide-react'
 import { useUiStore } from '../../store/useUiStore'
 import type { ColorMode, SizeMode } from '../../graph/encoding'
+
+interface GraphToolbarProps {
+  onExportPng?: () => void
+  onExportJsonVisible?: () => void
+  onExportJsonFull?: () => void
+}
 
 const COLOR_MODES: { value: ColorMode; label: string }[] = [
   { value: 'cluster', label: '簇' },
@@ -14,9 +20,15 @@ const SIZE_MODES: { value: SizeMode; label: string }[] = [
   { value: 'pagerank', label: 'PageRank' },
 ]
 
-const GraphToolbar: React.FC = () => {
+const GraphToolbar: React.FC<GraphToolbarProps> = ({ onExportPng, onExportJsonVisible, onExportJsonFull }) => {
   const { graphView, setGraphView, colorMode, setColorMode, sizeMode, setSizeMode, graphQuery, setGraphQuery } =
     useUiStore()
+  const [exportOpen, setExportOpen] = useState(false)
+
+  const runExport = (handler?: () => void) => {
+    handler?.()
+    setExportOpen(false)
+  }
 
   return (
     <div className="absolute left-4 top-4 z-10 flex flex-col gap-2 rounded-lg bg-gray-800/90 p-3 text-xs text-white">
@@ -70,6 +82,42 @@ const GraphToolbar: React.FC = () => {
           placeholder="图内搜索"
           className="w-28 bg-transparent outline-none placeholder:text-gray-500"
         />
+      </div>
+
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setExportOpen((o) => !o)}
+          className="flex w-full items-center gap-1 rounded bg-gray-700 px-2 py-1 hover:bg-gray-600"
+        >
+          <Download className="h-3 w-3 text-gray-400" />
+          导出
+        </button>
+        {exportOpen && (
+          <div className="absolute left-0 top-full z-20 mt-1 flex w-40 flex-col overflow-hidden rounded border border-gray-600 bg-gray-800">
+            <button
+              type="button"
+              onClick={() => runExport(onExportPng)}
+              className="px-3 py-1.5 text-left hover:bg-gray-700"
+            >
+              PNG（当前视图）
+            </button>
+            <button
+              type="button"
+              onClick={() => runExport(onExportJsonVisible)}
+              className="px-3 py-1.5 text-left hover:bg-gray-700"
+            >
+              JSON（当前视图）
+            </button>
+            <button
+              type="button"
+              onClick={() => runExport(onExportJsonFull)}
+              className="px-3 py-1.5 text-left hover:bg-gray-700"
+            >
+              JSON（完整网络）
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
