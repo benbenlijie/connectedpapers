@@ -11,6 +11,17 @@ vi.mock('react-force-graph-2d', () => ({
       <button data-testid="node-a-hover" onClick={() => props.onNodeHover({ id: 'a', title: 'A' })}>
         hover
       </button>
+      <button
+        data-testid="node-a-rightclick"
+        onClick={() =>
+          props.onNodeRightClick(
+            { id: 'a', title: 'A', url: 'https://example.test/a' },
+            { clientX: 12, clientY: 34, preventDefault() {} },
+          )
+        }
+      >
+        rightclick
+      </button>
       <button data-testid="background" onClick={() => props.onBackgroundClick()}>
         bg
       </button>
@@ -54,6 +65,9 @@ beforeEach(() => {
     graphView: '2d',
     timelineYear: null,
     timelinePlaying: false,
+    submittedQuery: null,
+    comparePaper: null,
+    compareSelectedNodeId: null,
   })
 })
 
@@ -112,5 +126,20 @@ describe('NetworkGraph', () => {
     fireEvent.click(screen.getByTestId('node-a-click'))
     expect(useUiStore.getState().compareSelectedNodeId).toBe('a')
     expect(useUiStore.getState().selectedNodeId).toBeNull()
+  })
+
+  it('opens a node context menu and re-roots the graph', () => {
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: '以此为根重建网络' }))
+    expect(useUiStore.getState().selectedPaper?.id).toBe('a')
+  })
+
+  it('searches by the node title from the context menu', () => {
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按标题搜索' }))
+    expect(useUiStore.getState().submittedQuery).toEqual({ query: 'A', query_type: 'keyword' })
   })
 })

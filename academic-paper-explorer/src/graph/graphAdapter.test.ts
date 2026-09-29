@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { graphAdapter } from './graphAdapter'
+import { graphAdapter, nodeToPaper } from './graphAdapter'
 import type { NetworkEdge, NetworkNode } from '../types/domain'
 
 const node = (id: string, over: Partial<NetworkNode> = {}): NetworkNode => ({
@@ -35,5 +35,25 @@ describe('graphAdapter', () => {
     const before = JSON.parse(JSON.stringify(input))
     graphAdapter(input, [], { colorMode: 'year', sizeMode: 'pagerank' })
     expect(input).toEqual(before)
+  })
+})
+
+describe('nodeToPaper', () => {
+  it('maps a graph node to a paper', () => {
+    const paper = nodeToPaper(
+      node('a', {
+        title: 'T', authors: 'A', year: 2001, citationCount: 5, abstract: 'x',
+        venue: 'V', url: 'u', pdfUrl: 'pu', fieldsOfStudy: ['CS'],
+      }),
+    )
+    expect(paper).toMatchObject({
+      id: 'a', title: 'T', authors: 'A', publication_year: 2001, year: 2001,
+      citation_count: 5, abstract: 'x', venue: 'V', url: 'u', pdf_url: 'pu',
+      fields_of_study: ['CS'], source: 'semantic_scholar',
+    })
+  })
+
+  it('falls back to the label when the title is empty', () => {
+    expect(nodeToPaper(node('b', { title: '', label: 'L' })).title).toBe('L')
   })
 })
