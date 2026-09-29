@@ -6,17 +6,17 @@ import { resolveClientId } from '../hooks/usePaperNetwork'
 import { useNotesStore } from '../store/useNotesStore'
 
 const DetailsPanel: React.FC = () => {
-  const { selectedNodeId, selectedPaper } = useUiStore()
+  const { selectedNodeId, selectedPaper, compareSelectedNodeId } = useUiStore()
   const notes = useNotesStore((s) => s.notes)
   const setNote = useNotesStore((s) => s.setNote)
   
-  // 优先使用选中的节点ID，其次使用选中的论文ID
-  const paperId = selectedNodeId || resolveClientId(selectedPaper)
+  // 最近点击优先：对比图选中的节点 > 主图选中的节点 > 主图论文
+  const paperId = compareSelectedNodeId || selectedNodeId || resolveClientId(selectedPaper)
   const note = paperId ? notes[paperId] ?? '' : ''
   const saved = note.trim().length > 0
   const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
 
-  if (!selectedPaper && !selectedNodeId) {
+  if (!selectedPaper && !selectedNodeId && !compareSelectedNodeId) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center p-6">

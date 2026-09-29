@@ -21,8 +21,12 @@ interface UiState {
   graphQuery: string
   graphDepth: number | null
   graphMaxNodes: number | null
+  comparePaper: Paper | null
+  compareSelectedNodeId: string | null
   setSelectedPaper: (p: Paper | null) => void
   selectRootPaper: (p: Paper) => void
+  setComparePaper: (p: Paper | null) => void
+  setCompareSelectedNodeId: (id: string | null) => void
   setSelectedNodeId: (id: string | null) => void
   setHighlightedNodes: (ids: string[]) => void
   submitQuery: (q: { query: string; query_type: string }) => void
@@ -58,8 +62,12 @@ export const useUiStore = create<UiState>((set) => ({
   graphQuery: '',
   graphDepth: null,
   graphMaxNodes: null,
+  comparePaper: null,
+  compareSelectedNodeId: null,
   setSelectedPaper: (p) => set({ selectedPaper: p }),
   selectRootPaper: (p) => set({ selectedPaper: p, graphDepth: null, graphMaxNodes: null }),
+  setComparePaper: (p) => set({ comparePaper: p, compareSelectedNodeId: null }),
+  setCompareSelectedNodeId: (id) => set({ compareSelectedNodeId: id }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   setHighlightedNodes: (ids) => set({ highlightedNodes: ids }),
   submitQuery: (q) => set({ submittedQuery: q }),

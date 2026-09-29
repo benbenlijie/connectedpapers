@@ -19,6 +19,8 @@ export function useUrlSync() {
     store.setSelectedPaper(s.paperId ? paperStubFromId(s.paperId) : null)
     store.setGraphParams(s.depth, s.maxNodes)
     store.setSelectedNodeId(s.selectedNodeId)
+    store.setComparePaper(s.comparePaperId ? paperStubFromId(s.comparePaperId) : null)
+    store.setCompareSelectedNodeId(s.compareSelectedNodeId)
     store.setGraphView(s.graphView)
     store.setColorMode(s.colorMode)
     store.setSizeMode(s.sizeMode)
@@ -43,6 +45,8 @@ export function useUrlSync() {
         depth: s.graphDepth,
         maxNodes: s.graphMaxNodes,
         selectedNodeId: s.selectedNodeId,
+        comparePaperId: resolveClientId(s.comparePaper),
+        compareSelectedNodeId: s.compareSelectedNodeId,
         graphView: s.graphView,
         colorMode: s.colorMode,
         sizeMode: s.sizeMode,
@@ -54,9 +58,12 @@ export function useUrlSync() {
       }
       const serialized = serializeUrlState(next)
       if (serialized === lastWritten.current) return
-      const prevPaper = lastWritten.current ? parseUrlState(lastWritten.current).paperId : null
+      const prev = lastWritten.current ? parseUrlState(lastWritten.current) : null
+      const rootChanged =
+        next.paperId !== (prev?.paperId ?? null) ||
+        next.comparePaperId !== (prev?.comparePaperId ?? null)
       lastWritten.current = serialized
-      setSearchParams(new URLSearchParams(serialized), { replace: next.paperId === prevPaper })
+      setSearchParams(new URLSearchParams(serialized), { replace: !rootChanged })
     }
     const unsubscribe = useUiStore.subscribe(write)
     write()

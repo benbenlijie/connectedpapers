@@ -25,6 +25,7 @@ function renderAt(entry: string) {
 beforeEach(() => {
   useUiStore.setState({
     selectedPaper: null, selectedNodeId: null, graphDepth: null, graphMaxNodes: null,
+    comparePaper: null, compareSelectedNodeId: null,
     graphView: '2d', colorMode: 'cluster', sizeMode: 'citations', timelineYear: null,
     filters: { yearRange: [1990, new Date().getFullYear()], minCitations: 0, selectedFields: [], selectedVenues: [] },
   })
@@ -85,5 +86,22 @@ describe('useUrlSync', () => {
     const search = screen.getByTestId('search').textContent ?? ''
     expect(search).not.toContain('cit')
     expect(useUiStore.getState().filters.minCitations).toBe(0)
+  })
+
+  it('hydrates compare params from the URL', () => {
+    renderAt('/?paper=A&paper2=B&node2=n2')
+    const s = useUiStore.getState()
+    expect(s.comparePaper?.id).toBe('B')
+    expect(s.compareSelectedNodeId).toBe('n2')
+  })
+
+  it('writes the compare paper into the URL', () => {
+    renderAt('/?paper=A')
+    act(() =>
+      useUiStore.getState().setComparePaper({
+        id: 'B', title: 't', citation_count: 0, authors: '', source: 'semantic_scholar',
+      }),
+    )
+    expect(screen.getByTestId('search').textContent).toContain('paper2=B')
   })
 })

@@ -6,6 +6,8 @@ export interface UrlState {
   depth: number | null
   maxNodes: number | null
   selectedNodeId: string | null
+  comparePaperId: string | null
+  compareSelectedNodeId: string | null
   graphView: '2d' | '3d'
   colorMode: ColorMode
   sizeMode: SizeMode
@@ -29,6 +31,8 @@ export function defaultUrlState(): UrlState {
     depth: null,
     maxNodes: null,
     selectedNodeId: null,
+    comparePaperId: null,
+    compareSelectedNodeId: null,
     graphView: '2d',
     colorMode: 'cluster',
     sizeMode: 'citations',
@@ -57,6 +61,10 @@ export function serializeUrlState(state: UrlState): string {
     params.set('paper', state.paperId)
     if (state.depth !== null) params.set('d', String(state.depth))
     if (state.maxNodes !== null) params.set('mn', String(state.maxNodes))
+    if (state.comparePaperId) {
+      params.set('paper2', state.comparePaperId)
+      if (state.compareSelectedNodeId) params.set('node2', state.compareSelectedNodeId)
+    }
   }
   if (state.selectedNodeId) params.set('node', state.selectedNodeId)
   if (state.graphView === '3d') params.set('view', '3d')
@@ -91,6 +99,8 @@ export function parseUrlState(search: string): UrlState {
     depth: depthRaw === null ? null : clamp(depthRaw, DEPTH_MIN, DEPTH_MAX),
     maxNodes: maxNodesRaw === null ? null : clamp(maxNodesRaw, MAX_NODES_MIN, MAX_NODES_MAX),
     selectedNodeId: params.get('node') || null,
+    comparePaperId: params.get('paper2') || null,
+    compareSelectedNodeId: params.get('node2') || null,
     graphView: params.get('view') === '3d' ? '3d' : '2d',
     colorMode: COLOR_MODES.includes(color as ColorMode) ? (color as ColorMode) : d.colorMode,
     sizeMode: SIZE_MODES.includes(size as SizeMode) ? (size as SizeMode) : d.sizeMode,

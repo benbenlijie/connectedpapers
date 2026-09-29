@@ -100,4 +100,17 @@ describe('NetworkGraph', () => {
     fireEvent.click(screen.getByTestId('background'))
     expect(useUiStore.getState().selectedNodeId).toBeNull()
   })
+
+  it('selects into the compare slot and clears the primary selection', () => {
+    useUiStore.setState({ selectedNodeId: 'b' })
+    render(
+      <NetworkGraph
+        paper={{ id: 'root', title: 'Root', citation_count: 0, authors: '', source: 'semantic_scholar' }}
+        slot="compare"
+      />,
+    )
+    fireEvent.click(screen.getByTestId('node-a-click'))
+    expect(useUiStore.getState().compareSelectedNodeId).toBe('a')
+    expect(useUiStore.getState().selectedNodeId).toBeNull()
+  })
 })

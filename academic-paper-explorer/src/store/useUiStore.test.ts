@@ -7,6 +7,7 @@ const paper = (id: string): Paper => ({ id, title: id, citation_count: 0, author
 beforeEach(() => {
   useUiStore.setState({
     selectedPaper: null, graphDepth: null, graphMaxNodes: null,
+    comparePaper: null, compareSelectedNodeId: null,
     graphView: '2d', colorMode: 'cluster', sizeMode: 'citations',
     timelineYear: null, timelinePlaying: false, graphQuery: '',
   })
@@ -56,5 +57,20 @@ describe('useUiStore network params', () => {
     expect(s.selectedPaper?.id).toBe('p1')
     expect(s.graphDepth).toBeNull()
     expect(s.graphMaxNodes).toBeNull()
+  })
+})
+
+describe('useUiStore comparison state', () => {
+  it('sets the compare paper and clears its node selection', () => {
+    useUiStore.getState().setCompareSelectedNodeId('n1')
+    useUiStore.getState().setComparePaper(paper('p2'))
+    const s = useUiStore.getState()
+    expect(s.comparePaper?.id).toBe('p2')
+    expect(s.compareSelectedNodeId).toBeNull()
+  })
+
+  it('tracks the compare node selection independently', () => {
+    useUiStore.getState().setCompareSelectedNodeId('n2')
+    expect(useUiStore.getState().compareSelectedNodeId).toBe('n2')
   })
 })

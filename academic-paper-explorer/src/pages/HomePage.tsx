@@ -9,7 +9,7 @@ import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { useUrlSync } from '../hooks/useUrlSync'
 
 const HomePage: React.FC = () => {
-  const { selectedPaper, graphDepth, graphMaxNodes } = useUiStore()
+  const { selectedPaper, graphDepth, graphMaxNodes, comparePaper, setComparePaper } = useUiStore()
   useUrlSync()
   const { data: networkData } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
@@ -57,7 +57,27 @@ const HomePage: React.FC = () => {
 
         {/* 中间网络图 */}
         <div className="flex-1 relative bg-gray-900">
-          {selectedPaper ? (
+          {selectedPaper && comparePaper ? (
+            <div className="flex h-full">
+              <div className="relative h-full min-w-0 flex-1 border-r border-gray-700">
+                <NetworkGraph />
+              </div>
+              <div className="relative h-full min-w-0 flex-1">
+                <div className="absolute left-1/2 top-4 z-20 flex max-w-[80%] -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-800/90 px-3 py-1.5 text-xs text-white">
+                  <span className="truncate">{comparePaper.title || '对比论文'}</span>
+                  <button
+                    type="button"
+                    aria-label="退出对比"
+                    onClick={() => setComparePaper(null)}
+                    className="flex-shrink-0 rounded px-1 text-gray-400 hover:bg-gray-600 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <NetworkGraph paper={comparePaper} slot="compare" />
+              </div>
+            </div>
+          ) : selectedPaper ? (
             <NetworkGraph />
           ) : (
             <div className="h-full flex items-center justify-center">
