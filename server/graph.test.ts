@@ -38,3 +38,15 @@ test('bibliographic coupling emits weighted edges for shared references', () => 
   ])
   expect(bibliographicCoupling(refs, 3)).toEqual([])
 })
+
+test('pagerank distributes rank by edge weight', () => {
+  const nodes = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  const edges = [
+    { from: 'a', to: 'b', type: 'reference', weight: 9 },
+    { from: 'a', to: 'c', type: 'reference', weight: 1 },
+  ]
+  const pr = pagerank(nodes as any, edges as any)
+  const sum = [...pr.values()].reduce((s, v) => s + v, 0)
+  expect(Math.abs(sum - 1)).toBeLessThan(1e-6)
+  expect(pr.get('b')!).toBeGreaterThan(pr.get('c')!)
+})

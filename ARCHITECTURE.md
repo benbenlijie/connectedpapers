@@ -154,12 +154,14 @@ fetched. `papers.ts:ensurePaperStub` inserts a minimal `(id, title=id)` row befo
 
 ### 4. PageRank dangling-mass conservation
 
-`graph.ts:pagerank` runs 20 iterations at damping 0.85. When a node has no outgoing
-links it is "dangling"; its rank is accumulated and redistributed uniformly as
-`(damping * dangling) / n`, so the rank vector always sums to 1. The same handling
-applies to edges pointing at nodes outside the rendered set. Node visual size is
-derived from the resulting `pageRankScore`, and `connectedComponents` assigns
-`clusterId`s for grouping.
+`graph.ts:pagerank` runs 20 iterations at damping 0.85 and distributes rank to
+out-edges **proportionally to their weight** (`weight` defaults to 1; coupling
+edges are treated as symmetric and flow both ways). Mass that would leave the
+node set — dangling nodes (`damping * rank`) or edges pointing outside the
+rendered set (their damped share) — is accumulated in `lost` and redistributed
+uniformly, so the rank vector always sums to 1. Node visual size is derived from
+the resulting `pageRankScore`, and `connectedComponents` assigns `clusterId`s for
+grouping.
 
 ### 5. OpenAlex → DOI resolution
 
