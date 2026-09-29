@@ -67,6 +67,19 @@ describe('NetworkGraph', () => {
     expect(screen.getByTestId('fg2d')).toBeInTheDocument()
   })
 
+  it('keeps the timeline range stable when filtering by year', () => {
+    render(<NetworkGraph />)
+    const before = screen.getByRole('slider')
+    const max = before.getAttribute('max')
+    const min = before.getAttribute('min')
+    expect(max).toBe('2010')
+    fireEvent.change(before, { target: { value: '2005' } })
+    const after = screen.getByRole('slider')
+    expect(after.getAttribute('max')).toBe(max)
+    expect(after.getAttribute('min')).toBe(min)
+    expect((after as HTMLInputElement).value).toBe('2005')
+  })
+
   it('selects a node on a single click', () => {
     render(<NetworkGraph />)
     fireEvent.click(screen.getByTestId('node-a-click'))
