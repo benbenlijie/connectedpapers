@@ -39,26 +39,34 @@ export function connectedComponents(nodes: GraphNode[], edges: GraphEdge[]): Map
 export function pagerank(nodes: GraphNode[], edges: GraphEdge[], damping = 0.85, iterations = 20): Map<string, number> {
   const n = nodes.length
   const pr = new Map<string, number>()
-  const out = new Map<string, string[]>()
+  const out = new Map<string, { to: string; w: number }[]>()
   for (const node of nodes) { pr.set(node.id, 1 / n); out.set(node.id, []) }
-  for (const e of edges) out.get(e.from)?.push(e.to)
+  for (const e of edges) {
+    const w = e.weight > 0 ? e.weight : 1
+    out.get(e.from)?.push({ to: e.to, w })
+    // Bibliographic coupling is symmetric: let rank flow both ways.
+    if (e.type === 'coupling') out.get(e.to)?.push({ to: e.from, w })
+  }
 
   for (let i = 0; i < iterations; i++) {
     const next = new Map<string, number>()
     for (const node of nodes) next.set(node.id, (1 - damping) / n)
-    let dangling = 0
+    let lost = 0
     for (const node of nodes) {
       const links = out.get(node.id)!
-      if (!links.length) { dangling += pr.get(node.id) ?? 0; continue }
-      const share = (damping * (pr.get(node.id) ?? 0)) / links.length
-      for (const t of links) {
-        if (next.has(t)) next.set(t, next.get(t)! + share)
-        else dangling += (pr.get(node.id) ?? 0) / links.length
+      const total = links.reduce((s, l) => s + l.w, 0)
+      const current = pr.get(node.id) ?? 0
+      if (!links.length || total <= 0) { lost += damping * current; continue }
+      const base = damping * current
+      for (const link of links) {
+        const share = base * (link.w / total)
+        if (next.has(link.to)) next.set(link.to, next.get(link.to)! + share)
+        else lost += share
       }
     }
-    // 悬挂节点（无出链）的质量按标准 PageRank 均摊，保证总和恒为 1。
-    const dShare = (damping * dangling) / n
-    for (const node of nodes) next.set(node.id, (next.get(node.id) ?? 0) + dShare)
+    // Redistribute dangling / out-of-set mass uniformly so the vector sums to 1.
+    const share = lost / n
+    if (share) for (const node of nodes) next.set(node.id, next.get(node.id)! + share)
     for (const [k, v] of next) pr.set(k, v)
   }
   return pr
