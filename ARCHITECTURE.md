@@ -115,6 +115,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
 | `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
 | `lib/searchHistory.ts` | Pure recent-query list helpers (parse/add/remove/filter). |
+| `lib/networkCache.ts` | Pure + localStorage cache of built networks and node positions. |
 
 ## Key design decisions
 
@@ -319,6 +320,18 @@ the primary double-click rebuild reuses `graphAdapter.nodeToPaper`), **按标题
 only), and **打开原文** (when the node has a `url`). `NetworkGraph` wires
 `onNodeRightClick`/`onBackgroundRightClick` in the shared props and suppresses the
 browser menu via `onContextMenu` preventDefault, so it works in 2D and 3D.
+
+### 18. Client-side network cache
+
+Server builds are cached in `paper_networks` (24h), but the browser had no
+persistent copy, so a refresh re-requested and re-ran the force layout.
+`lib/networkCache.ts` adds a `localStorage` cache keyed like the server
+(`${paperId}|d{depth}|n{maxNodes}`) holding the network data plus node `x/y/z`
+positions, pruned to 8 entries by `savedAt` with a 7-day freshness TTL.
+`usePaperNetwork` seeds React Query's `initialData` from it (fresh copy renders
+instantly, no request, no loading flash) and writes results back; `NetworkGraph`
+applies cached positions before rendering and saves positions on `onEngineStop`.
+The server cache still backs the first build; this layer removes the repeat.
 
 ## Data model
 

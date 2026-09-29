@@ -51,6 +51,7 @@ let mockState: { data: typeof NETWORK | null; isLoading: boolean; error: Error |
 
 vi.mock('../hooks/usePaperNetwork', () => ({
   usePaperNetwork: () => mockState,
+  networkCacheKeyForPaper: (paper: { id?: string } | null) => (paper?.id ? `key:${paper.id}` : null),
 }))
 
 import NetworkGraph from './NetworkGraph'
