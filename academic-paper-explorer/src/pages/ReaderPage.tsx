@@ -9,7 +9,7 @@ import {
   sanitizeArticleHtml,
   type OutlineItem,
 } from '../lib/article'
-import { fetchProviders, translate, chunk, type PublicProvider } from '../lib/translator'
+import { fetchProviders, prepareBrowserTranslator, translate, chunk, type PublicProvider } from '../lib/translator'
 import { askAi, type AiAction } from '../lib/ai'
 import { useReadingStore } from '../store/useReadingStore'
 import { READING_STATUSES, type ReadingStatus } from '../lib/reading'
@@ -247,6 +247,7 @@ const ReaderPage: React.FC = () => {
 
   const runTranslate = useCallback(
     async (lang: string, doc: Document, blocks: Element[]) => {
+      if (providers.some((p) => p.kind === 'browser')) prepareBrowserTranslator(lang)
       setTranslating(true)
       setTranslateError(null)
       setProgress({ done: 0, total: blocks.length })
@@ -271,7 +272,7 @@ const ReaderPage: React.FC = () => {
         setTranslating(false)
       }
     },
-    [],
+    [providers],
   )
 
   const toggleTranslate = useCallback(() => {
