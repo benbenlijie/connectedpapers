@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   translate,
   hasBrowserTranslator,
+  prepareBrowserTranslator,
+  browserTranslate,
   chunk,
   clearTranslationCache,
   type TranslateDeps,
@@ -97,5 +99,38 @@ describe('hasBrowserTranslator', () => {
   it('detects a Translator.create function', () => {
     expect(hasBrowserTranslator({ Translator: { create: () => {} } })).toBe(true)
     expect(hasBrowserTranslator({})).toBe(false)
+  })
+})
+
+describe('prepareBrowserTranslator', () => {
+  const globals = globalThis as { Translator?: unknown }
+  afterEach(() => {
+    delete globals.Translator
+  })
+
+  it('calls create synchronously so user activation is preserved', async () => {
+    const create = vi.fn(async () => ({ translate: async (t: string) => `zh:${t}` }))
+    globals.Translator = { create }
+    prepareBrowserTranslator('xx-gesture')
+    expect(create).toHaveBeenCalledTimes(1)
+    const out = await browserTranslate(['a'], 'xx-gesture')
+    expect(out).toEqual(['zh:a'])
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries create after a failure', async () => {
+    let calls = 0
+    const create = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) throw new Error('no gesture')
+      return { translate: async (t: string) => `zh:${t}` }
+    })
+    globals.Translator = { create }
+    prepareBrowserTranslator('yy-retry')
+    await expect(browserTranslate(['a'], 'yy-retry')).rejects.toThrow('no gesture')
+    prepareBrowserTranslator('yy-retry')
+    const out = await browserTranslate(['a'], 'yy-retry')
+    expect(out).toEqual(['zh:a'])
+    expect(create).toHaveBeenCalledTimes(2)
   })
 })

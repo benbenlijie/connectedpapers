@@ -41,22 +41,52 @@ export async function fetchProviders(): Promise<PublicProvider[]> {
   return (body?.data?.providers ?? []) as PublicProvider[]
 }
 
-export function hasBrowserTranslator(scope: unknown = globalThis): boolean {
-  const t = (scope as { Translator?: { create?: unknown } } | null)?.Translator
-  return typeof t?.create === 'function'
+interface BrowserTranslator {
+  translate: (text: string) => Promise<string>
 }
 
-let translatorPromise: Promise<{ translate: (text: string) => Promise<string> }> | null = null
+interface TranslatorApi {
+  create: (options: unknown) => Promise<BrowserTranslator>
+}
+
+function translatorApi(scope: unknown = globalThis): TranslatorApi | null {
+  const t = (scope as { Translator?: TranslatorApi } | null)?.Translator
+  return typeof t?.create === 'function' ? t : null
+}
+
+export function hasBrowserTranslator(scope: unknown = globalThis): boolean {
+  return translatorApi(scope) !== null
+}
+
+let translatorPromise: Promise<BrowserTranslator> | null = null
 let translatorTarget: string | null = null
+
+/**
+ * Start creating the browser translator while a user gesture is still active.
+ * `Translator.create()` throws NotAllowedError when the language pack is
+ * "downloadable"/"downloading" (the model downloads on first use) and no
+ * transient activation is present, so a click handler must call this
+ * synchronously before any `await`.
+ */
+export function prepareBrowserTranslator(target: string): void {
+  if (translatorPromise && translatorTarget === target) return
+  const api = translatorApi()
+  if (!api) return
+  translatorTarget = target
+  const promise = api.create({ sourceLanguage: 'en', targetLanguage: target })
+  translatorPromise = promise
+  promise.catch(() => {
+    if (translatorPromise === promise) {
+      translatorPromise = null
+      translatorTarget = null
+    }
+  })
+}
 
 export async function browserTranslate(texts: string[], target: string): Promise<string[]> {
   if (!hasBrowserTranslator()) throw new Error('浏览器不支持内置翻译')
-  if (!translatorPromise || translatorTarget !== target) {
-    const T = (globalThis as unknown as { Translator: { create: (o: unknown) => Promise<any> } }).Translator
-    translatorPromise = T.create({ sourceLanguage: 'en', targetLanguage: target })
-    translatorTarget = target
-  }
-  const translator = await translatorPromise
+  prepareBrowserTranslator(target)
+  const translator = await translatorPromise!
   const out: string[] = []
   for (const text of texts) out.push(await translator.translate(text))
   return out
