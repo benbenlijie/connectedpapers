@@ -10,6 +10,8 @@ import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
 import { withAlpha } from '../graph/encoding'
 import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } from '../graph/exportGraph'
+import { annotatedIds } from '../lib/notes'
+import { useNotesStore } from '../store/useNotesStore'
 import GraphToolbar from './graph/GraphToolbar'
 import GraphLegend from './graph/GraphLegend'
 import GraphTimeline from './graph/GraphTimeline'
@@ -54,6 +56,9 @@ const NetworkGraph: React.FC = () => {
   } = useUiStore()
 
   const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
+
+  const notes = useNotesStore((s) => s.notes)
+  const markedIds = useMemo(() => annotatedIds(notes), [notes])
 
   const roRef = useRef<ResizeObserver | null>(null)
   const containerElRef = useRef<HTMLDivElement | null>(null)
@@ -253,6 +258,17 @@ const NetworkGraph: React.FC = () => {
       ctx.strokeStyle = node.isRoot ? '#ff6b35' : selectedNodeId === node.id ? '#ffd700' : 'rgba(9,14,20,0.9)'
       ctx.stroke()
 
+      if (markedIds.has(node.id)) {
+        ctx.globalAlpha = dim ? 0.12 : 1
+        ctx.beginPath()
+        ctx.arc(x + node.size * 0.8, y - node.size * 0.8, Math.max(1.4, 3 / globalScale), 0, 2 * Math.PI)
+        ctx.fillStyle = '#fbbf24'
+        ctx.fill()
+        ctx.lineWidth = 1 / globalScale
+        ctx.strokeStyle = '#0b1220'
+        ctx.stroke()
+      }
+
       const showLabel =
         (globalScale >= ZOOM_LABEL_THRESHOLD ? zoomLabelIds.has(node.id) : priorityLabelIds.has(node.id)) && !dim
       if (showLabel) {
@@ -286,7 +302,7 @@ const NetworkGraph: React.FC = () => {
       }
       ctx.globalAlpha = 1
     },
-    [activeId, neighborIds, selectedNodeId, priorityLabelIds, zoomLabelIds],
+    [activeId, neighborIds, selectedNodeId, priorityLabelIds, zoomLabelIds, markedIds],
   )
 
   const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {

@@ -92,6 +92,8 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
 | `store/useUiStore.ts` | Zustand store for UI-only state: selection, filters, graph view, encoding, timeline, explicit network params. |
+| `store/useNotesStore.ts` | Zustand store for per-paper notes, persisted to `localStorage`. |
+| `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
 
 ## Key design decisions
 
@@ -175,6 +177,16 @@ counts, timestamp). PNG is captured from the single `<canvas>` inside the graph
 container, so overlays (toolbar, legend, minimap) are intentionally excluded. The
 3D renderer is created with `rendererConfig: { preserveDrawingBuffer: true }`;
 without it a WebGL `toDataURL` returns a blank image.
+
+### 8. Local paper notes
+
+`lib/notes.ts` holds the pure note-map operations; `store/useNotesStore.ts` wraps
+them over `localStorage['connectedpapers.notes.v1']` (lenient parse, guarded
+writes). `DetailsPanel` edits the note for
+`selectedNodeId || resolveClientId(selectedPaper)` on every keystroke and shows a
+saved hint; `NetworkGraph` derives `annotatedIds` from the store and marks those
+nodes in the 2D canvas pass. Notes are deliberately local-only: not in the URL,
+not exported, and not marked in 3D.
 
 ## Data model
 

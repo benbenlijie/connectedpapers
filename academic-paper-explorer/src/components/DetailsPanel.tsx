@@ -3,12 +3,17 @@ import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, Trendi
 import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
 import { resolveClientId } from '../hooks/usePaperNetwork'
+import { useNotesStore } from '../store/useNotesStore'
 
 const DetailsPanel: React.FC = () => {
   const { selectedNodeId, selectedPaper } = useUiStore()
+  const notes = useNotesStore((s) => s.notes)
+  const setNote = useNotesStore((s) => s.setNote)
   
   // 优先使用选中的节点ID，其次使用选中的论文ID
   const paperId = selectedNodeId || resolveClientId(selectedPaper)
+  const note = paperId ? notes[paperId] ?? '' : ''
+  const saved = note.trim().length > 0
   const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
 
   if (!selectedPaper && !selectedNodeId) {
@@ -120,6 +125,23 @@ const DetailsPanel: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* 我的笔记 */}
+        {paperId && (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-sm font-medium text-white">我的笔记</h4>
+              {saved && <span className="text-xs text-green-400">已保存</span>}
+            </div>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(paperId, e.target.value)}
+              placeholder="记录想法…"
+              rows={4}
+              className="w-full resize-y rounded-lg bg-gray-700 px-3 py-2 text-sm text-gray-100 outline-none placeholder:text-gray-500 focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        )}
 
         {/* 指标 */}
         {metrics && (
