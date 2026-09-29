@@ -45,7 +45,7 @@ describe('ReaderPage', () => {
     renderReader()
     const frame = await screen.findByTestId('reader-frame')
     expect(frame.getAttribute('srcdoc')).toContain('hello world')
-    expect(frame.getAttribute('srcdoc')).toContain('<base href="https://arxiv.org/">')
+    expect(frame.getAttribute('srcdoc')).toContain('<base href="https://arxiv.org/html/">')
     expect(screen.getByRole('button', { name: 'Introduction' })).toBeInTheDocument()
   })
 
