@@ -44,6 +44,8 @@ const NetworkGraph: React.FC = () => {
     colorMode,
     sizeMode,
     timelineYear,
+    setTimelineYear,
+    setTimelinePlaying,
     graphQuery,
   } = useUiStore()
 
@@ -86,6 +88,25 @@ const NetworkGraph: React.FC = () => {
       timelineYear,
     })
   }, [networkData, filters, timelineYear])
+
+  // Year domain for the timeline slider: everything except the timeline filter,
+  // otherwise the slider range collapses while dragging (feedback loop).
+  const domainNodes = useMemo(() => {
+    if (!networkData) return []
+    return filterGraph(networkData.nodes, [], {
+      yearRange: filters.yearRange,
+      minCitations: filters.minCitations,
+      selectedFields: filters.selectedFields,
+      selectedVenues: filters.selectedVenues,
+      timelineYear: null,
+    }).nodes
+  }, [networkData, filters])
+
+  // A new network invalidates any year filter carried over from the old paper.
+  useEffect(() => {
+    setTimelineYear(null)
+    setTimelinePlaying(false)
+  }, [networkData, setTimelineYear, setTimelinePlaying])
 
   const graphData = useMemo(
     () => graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode }),
@@ -260,8 +281,8 @@ const NetworkGraph: React.FC = () => {
     },
     onEngineStop: () => {
       setEngineTick((v) => v + 1)
-      if (fittedRef.current !== graphData) {
-        fittedRef.current = graphData
+      if (fittedRef.current !== networkData) {
+        fittedRef.current = networkData
         const fg = graphView === '3d' ? fg3dRef.current : fg2dRef.current
         fg?.zoomToFit?.(600, 60)
       }
@@ -353,7 +374,7 @@ const NetworkGraph: React.FC = () => {
     )
   }
 
-  const years = filteredNodes
+  const years = domainNodes
     .map((n) => n.year)
     .filter((y): y is number => typeof y === 'number')
   const minYear = years.length > 0 ? Math.min(...years) : 1990
