@@ -87,6 +87,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `graph/encoding.ts` | Pure color/size encoding by dimension (cluster/year/field, citations/pagerank). |
 | `graph/graphFilters.ts` | Pure timeline/year/citations/field/venue filtering + dangling-edge removal. |
 | `graph/graphAdapter.ts` | Pure adapter to the force-graph `{nodes, links}` shape. |
+| `graph/exportGraph.ts` | Pure export payload/filename helpers plus thin PNG/JSON download glue. |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap. |
@@ -162,6 +163,18 @@ adaptive defaults. On load the hook installs a minimal `paperStubFromId(id)` so
 `DetailsPanel`'s existing `usePaperDetails` call fills in the full record.
 `selectRootPaper` (used by list clicks and double-click rebuild) clears the
 explicit network params so a freshly chosen paper gets adaptive defaults again.
+
+### 7. Graph export (PNG / JSON)
+
+`graph/exportGraph.ts` separates the testable parts (`sanitizeFilename`,
+`exportFilename`, `buildExportPayload`) from two thin DOM helpers
+(`downloadText`, `downloadCanvasPng`). The toolbar's export menu offers PNG of
+the current view, JSON of the current (filtered) view, and JSON of the full
+fetched network; the JSON payload carries a `meta` block (`scope`, `root_title`,
+counts, timestamp). PNG is captured from the single `<canvas>` inside the graph
+container, so overlays (toolbar, legend, minimap) are intentionally excluded. The
+3D renderer is created with `rendererConfig: { preserveDrawingBuffer: true }`;
+without it a WebGL `toDataURL` returns a blank image.
 
 ## Data model
 

@@ -9,6 +9,7 @@ import { graphAdapter, linkEndId, type GraphLink, type GraphNode } from '../grap
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
 import { withAlpha } from '../graph/encoding'
+import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } from '../graph/exportGraph'
 import GraphToolbar from './graph/GraphToolbar'
 import GraphLegend from './graph/GraphLegend'
 import GraphTimeline from './graph/GraphTimeline'
@@ -55,6 +56,7 @@ const NetworkGraph: React.FC = () => {
   const { data: networkData, isLoading, error } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
   const roRef = useRef<ResizeObserver | null>(null)
+  const containerElRef = useRef<HTMLDivElement | null>(null)
   const fg2dRef = useRef<any>(null)
   const fg3dRef = useRef<any>(null)
   const lastClick = useRef<{ id: string; t: number } | null>(null)
@@ -67,6 +69,7 @@ const NetworkGraph: React.FC = () => {
   const [engineTick, setEngineTick] = useState(0)
 
   const setContainer = useCallback((el: HTMLDivElement | null) => {
+    containerElRef.current = el
     roRef.current?.disconnect()
     roRef.current = null
     if (!el) return
@@ -115,6 +118,25 @@ const NetworkGraph: React.FC = () => {
     () => graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode }),
     [filteredNodes, filteredEdges, colorMode, sizeMode],
   )
+
+  const rootTitle = selectedPaper?.title || undefined
+
+  const handleExportPng = useCallback(() => {
+    const canvas = containerElRef.current?.querySelector('canvas') as HTMLCanvasElement | null
+    if (!canvas) return
+    downloadCanvasPng(canvas, exportFilename(rootTitle, 'png'))
+  }, [rootTitle])
+
+  const handleExportJsonVisible = useCallback(() => {
+    const payload = buildExportPayload(filteredNodes, filteredEdges, { scope: 'visible', rootTitle })
+    downloadText(exportFilename(rootTitle, 'json'), JSON.stringify(payload, null, 2), 'application/json')
+  }, [filteredNodes, filteredEdges, rootTitle])
+
+  const handleExportJsonFull = useCallback(() => {
+    if (!networkData) return
+    const payload = buildExportPayload(networkData.nodes, networkData.edges, { scope: 'full', rootTitle })
+    downloadText(exportFilename(rootTitle, 'json'), JSON.stringify(payload, null, 2), 'application/json')
+  }, [networkData, rootTitle])
 
   const activeId = hoverNode?.id ?? selectedNodeId ?? null
 
@@ -443,12 +465,17 @@ const NetworkGraph: React.FC = () => {
             linkDirectionalParticleWidth={1.5}
             nodeRelSize={2}
             labelIds={labelIds3d}
+            rendererConfig={{ preserveDrawingBuffer: true }}
             {...commonProps}
           />
         </React.Suspense>
       )}
 
-      <GraphToolbar />
+      <GraphToolbar
+        onExportPng={handleExportPng}
+        onExportJsonVisible={handleExportJsonVisible}
+        onExportJsonFull={handleExportJsonFull}
+      />
       <GraphLegend nodes={graphData.nodes} />
       <GraphTimeline minYear={minYear} maxYear={maxYear} />
       {graphView === '2d' && engineTick > 0 && (
