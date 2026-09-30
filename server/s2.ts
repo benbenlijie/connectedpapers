@@ -87,6 +87,27 @@ export function getCitationContexts(s2Path: string): Promise<any> {
   return getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}/citations?fields=contexts,citingPaper.paperId,citingPaper.title,citingPaper.year,isInfluential&limit=20`)
 }
 
+const LINEAGE_FIELDS =
+  'contexts,isInfluential,citedPaper.paperId,citedPaper.title,citedPaper.year,citedPaper.citationCount,citedPaper.authors,citedPaper.venue'
+const CITING_FIELDS =
+  'contexts,isInfluential,citingPaper.paperId,citingPaper.title,citingPaper.year,citingPaper.citationCount,citingPaper.authors,citingPaper.venue'
+
+/** Works the paper references (its predecessors). */
+export function getReferences(s2Path: string, limit: number): Promise<any> {
+  return withRetry(
+    () => getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}/references?fields=${LINEAGE_FIELDS}&limit=${limit}`),
+    { retries: 2, baseDelayMs: 1000 },
+  )
+}
+
+/** Works that cite the paper (its successors). */
+export function getCitations(s2Path: string, limit: number): Promise<any> {
+  return withRetry(
+    () => getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}/citations?fields=${CITING_FIELDS}&limit=${limit}`),
+    { retries: 2, baseDelayMs: 1000 },
+  )
+}
+
 /** SPECTER2 embeddings for up to 500 ids (single attempt; rate limits are common). */
 export async function getEmbeddingsBatch(s2Paths: string[]): Promise<Map<string, number[]>> {
   const out = new Map<string, number[]>()

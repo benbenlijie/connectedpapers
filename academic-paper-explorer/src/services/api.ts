@@ -1,7 +1,7 @@
 import {
-  searchResponseSchema, networkDataSchema, jobStatusSchema, detailsResponseSchema,
+  searchResponseSchema, networkDataSchema, jobStatusSchema, detailsResponseSchema, lineageResponseSchema,
 } from './schemas'
-import type { NetworkData, Paper, PaperDetails } from '../types/domain'
+import type { NetworkData, Paper, PaperDetails, PaperLineage } from '../types/domain'
 import { API_BASE } from '../lib/apiBase'
 
 export class ApiError extends Error {
@@ -61,6 +61,10 @@ export const api = {
   },
   async details(paperId: string): Promise<PaperDetails> {
     return detailsResponseSchema.parse(await request('/details', { paper_id: paperId })).data as any
+  },
+  async lineage(paperId: string): Promise<PaperLineage> {
+    const parsed = lineageResponseSchema.parse(await request('/lineage', { paper_id: paperId })) as { data: PaperLineage }
+    return parsed.data
   },
   networkWithPolling,
 }

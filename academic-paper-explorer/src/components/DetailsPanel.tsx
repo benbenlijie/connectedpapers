@@ -1,14 +1,58 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe } from 'lucide-react'
+import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
+import { usePaperLineage } from '../hooks/usePaperLineage'
 import { resolveClientId } from '../hooks/usePaperNetwork'
 import { useNotesStore } from '../store/useNotesStore'
 import { useLibraryStore } from '../store/useLibraryStore'
+import type { LineagePaper } from '../types/domain'
+
+const LineageList: React.FC<{
+  label: string
+  icon: React.ReactNode
+  items: LineagePaper[]
+  accent: string
+  onPick: (id: string) => void
+}> = ({ label, icon, items, accent, onPick }) => {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <h4 className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
+        <span className={accent}>{icon}</span>
+        {label}
+        <span className="text-xs text-gray-500">{items.length}</span>
+      </h4>
+      <div className="space-y-1.5">
+        {items.map((item) => (
+          <button
+            key={item.paperId}
+            type="button"
+            onClick={() => onPick(item.paperId)}
+            title={item.title}
+            className="w-full rounded bg-gray-700/60 p-2 text-left hover:bg-gray-700"
+          >
+            <div className="line-clamp-2 text-sm text-white">{item.title || '未知标题'}</div>
+            <div className="mt-0.5 text-xs text-gray-400">
+              {item.authors && <span className="line-clamp-1">{item.authors}</span>}
+              {item.year && <span> · {item.year}</span>}
+              {item.citationCount != null && <span> · {item.citationCount} 引用</span>}
+              {item.isInfluential && (
+                <span className="ml-1 rounded bg-yellow-600/20 px-1.5 py-0.5 text-[10px] text-yellow-300">
+                  重要
+                </span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const DetailsPanel: React.FC = () => {
-  const { selectedNodeId, selectedPaper, compareSelectedNodeId } = useUiStore()
+  const { selectedNodeId, selectedPaper, compareSelectedNodeId, setSelectedNodeId } = useUiStore()
   const notes = useNotesStore((s) => s.notes)
   const setNote = useNotesStore((s) => s.setNote)
   const library = useLibraryStore((s) => s.library)
@@ -21,6 +65,7 @@ const DetailsPanel: React.FC = () => {
   const note = paperId ? notes[paperId] ?? '' : ''
   const saved = note.trim().length > 0
   const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
+  const { data: lineage } = usePaperLineage(paperId)
 
   if (!selectedPaper && !selectedNodeId && !compareSelectedNodeId) {
     return (
@@ -276,6 +321,27 @@ const DetailsPanel: React.FC = () => {
             </a>
           )}
         </div>
+
+        {/* 研究脉络：前置工作 / 后续工作 */}
+        {lineage && (lineage.prior.length > 0 || lineage.followUps.length > 0) && (
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium text-white">研究脉络</h4>
+            <LineageList
+              label="前置工作（参考）"
+              icon={<ArrowUpRight className="h-4 w-4" />}
+              items={lineage.prior}
+              accent="text-blue-400"
+              onPick={setSelectedNodeId}
+            />
+            <LineageList
+              label="后续工作（引用）"
+              icon={<ArrowDownLeft className="h-4 w-4" />}
+              items={lineage.followUps}
+              accent="text-green-400"
+              onPick={setSelectedNodeId}
+            />
+          </div>
+        )}
 
         {/* 相关推荐 */}
         {recommendations.length > 0 && (

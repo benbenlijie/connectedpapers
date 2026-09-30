@@ -35,4 +35,11 @@ describe('GraphToolbar export menu', () => {
     expect(bib).toHaveBeenCalledOnce()
     expect(csv).toHaveBeenCalledOnce()
   })
+
+  it('toggles the node list', () => {
+    const toggle = vi.fn()
+    render(<GraphToolbar onToggleNodeList={toggle} />)
+    fireEvent.click(screen.getByRole('button', { name: '节点列表' }))
+    expect(toggle).toHaveBeenCalledOnce()
+  })
 })

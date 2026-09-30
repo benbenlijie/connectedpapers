@@ -99,6 +99,14 @@ describe('NetworkGraph', () => {
     expect((after as HTMLInputElement).value).toBe('2005')
   })
 
+  it('selects the root node when the graph first loads', () => {
+    useUiStore.setState({
+      selectedPaper: { id: 'root', title: 'Root', citation_count: 0, authors: '', source: 'semantic_scholar' },
+    })
+    render(<NetworkGraph />)
+    expect(useUiStore.getState().selectedNodeId).toBe('a')
+  })
+
   it('selects a node on a single click', () => {
     render(<NetworkGraph />)
     fireEvent.click(screen.getByTestId('node-a-click'))

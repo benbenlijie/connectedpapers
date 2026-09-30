@@ -29,6 +29,7 @@ const PaperList: React.FC = () => {
   const [onlyList, setOnlyList] = useState(false)
   const [favOnly, setFavOnly] = useState(false)
   const [collectionFilter, setCollectionFilter] = useState('')
+  const [hover, setHover] = useState<{ paper: Paper; x: number; y: number } | null>(null)
 
   const { data, isFetching, error, refetch } = useSearchPapers(submittedQuery)
   const searchResults = data?.papers ?? []
@@ -199,6 +200,9 @@ const PaperList: React.FC = () => {
             <div
               key={paper.id || paper.semantic_scholar_id || paper.openalex_id}
               onClick={() => handlePaperSelect(paper)}
+              onMouseEnter={(e) => setHover({ paper, x: e.clientX, y: e.clientY })}
+              onMouseMove={(e) => setHover({ paper, x: e.clientX, y: e.clientY })}
+              onMouseLeave={() => setHover(null)}
               className={`
                 p-4 bg-gray-700 hover:bg-gray-600 rounded-lg cursor-pointer transition-all duration-200
                 ${selectedPaper?.id === paper.id ? 'ring-2 ring-blue-500 bg-gray-600' : ''}
@@ -325,6 +329,46 @@ const PaperList: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {hover && <PaperHoverTooltip paper={hover.paper} x={hover.x} y={hover.y} />}
+    </div>
+  )
+}
+
+const TOOLTIP_WIDTH = 340
+
+const PaperHoverTooltip: React.FC<{ paper: Paper; x: number; y: number }> = ({ paper, x, y }) => {
+  const offset = 16
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : TOOLTIP_WIDTH + x + offset
+  const left =
+    x + offset + TOOLTIP_WIDTH > viewportWidth ? Math.max(offset, x - TOOLTIP_WIDTH - offset) : x + offset
+  const top = typeof window !== 'undefined' ? Math.min(y + offset, window.innerHeight - 180) : y + offset
+
+  const year = paper.publication_year ?? paper.year
+  const venue = paper.venue || paper.journal
+
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-none fixed z-50 rounded-lg border border-gray-600 bg-gray-800/95 p-3 text-xs text-gray-100 shadow-xl"
+      style={{ left, top, width: TOOLTIP_WIDTH }}
+    >
+      <div className="mb-1 font-medium text-white">{paper.title || '未命名论文'}</div>
+      <div className="space-y-0.5 break-words text-gray-400">
+        {paper.authors && <div>{paper.authors}</div>}
+        {(year || venue) && (
+          <div>
+            {year}
+            {year && venue ? ' · ' : ''}
+            {venue}
+          </div>
+        )}
+        <div>{paper.citation_count} 引用</div>
+        {paper.doi && <div className="text-gray-500">DOI: {paper.doi}</div>}
+      </div>
+      {paper.abstract && (
+        <p className="mt-2 line-clamp-4 text-gray-400">{paper.abstract}</p>
+      )}
     </div>
   )
 }

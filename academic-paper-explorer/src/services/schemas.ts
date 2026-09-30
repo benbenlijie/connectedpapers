@@ -37,3 +37,21 @@ export const jobStatusSchema = z.object({
 })
 
 export const detailsResponseSchema = z.object({ data: z.object({ paper: z.any() }).passthrough() })
+
+export const lineagePaperSchema = z.object({
+  paperId: z.string(),
+  title: z.string().nullish(),
+  year: z.number().nullish(),
+  citationCount: z.number().nullish(),
+  venue: z.string().nullish(),
+  authors: z.string().nullish(),
+  isInfluential: z.boolean().nullish(),
+})
+
+export const lineageResponseSchema = z.object({
+  data: z.object({
+    root_id: z.string(),
+    prior: z.array(lineagePaperSchema),
+    followUps: z.array(lineagePaperSchema),
+  }),
+})

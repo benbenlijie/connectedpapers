@@ -9,6 +9,7 @@ import { translateRoute } from './routes/translate'
 import { llmStatusRoute } from './routes/llm'
 import { aiRoute } from './routes/ai'
 import { neighborsRoute } from './routes/neighbors'
+import { lineageRoute } from './routes/lineage'
 import { cookieHeader, clientIpFrom, extractToken, safeEqual, withBasePath } from './auth'
 import { createRateLimiter } from './rateLimit'
 
@@ -85,6 +86,7 @@ server = Bun.serve({
       if (p === '/api/search' && req.method === 'POST') return await searchRoute(req)
       if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
       if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
+      if (p === '/api/lineage' && req.method === 'POST') return await lineageRoute(req)
       if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
       if (p === '/api/ai' && req.method === 'POST') return await aiRoute(req)
       if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()

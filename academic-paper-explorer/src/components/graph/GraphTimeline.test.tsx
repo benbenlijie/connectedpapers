@@ -29,4 +29,15 @@ describe('GraphTimeline', () => {
     expect(useUiStore.getState().timelineYear).toBe(2000)
     expect(useUiStore.getState().timelinePlaying).toBe(true)
   })
+
+  it('splits the track around the root year when provided', () => {
+    render(<GraphTimeline minYear={2000} maxYear={2020} rootYear={2012} />)
+    expect(screen.getByText('前置 ≤ 2012')).toBeInTheDocument()
+    expect(screen.getByText('后续 > 2012')).toBeInTheDocument()
+  })
+
+  it('omits the split when the root year is outside the range', () => {
+    render(<GraphTimeline minYear={2000} maxYear={2020} rootYear={1990} />)
+    expect(screen.queryByText(/前置/)).not.toBeInTheDocument()
+  })
 })

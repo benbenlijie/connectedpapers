@@ -26,6 +26,7 @@ import GraphLegend from './graph/GraphLegend'
 import GraphTimeline from './graph/GraphTimeline'
 import GraphMinimap from './graph/GraphMinimap'
 import GraphTooltip from './graph/GraphTooltip'
+import GraphNodeList from './graph/GraphNodeList'
 import type { Paper, NetworkEdge, NetworkNode } from '../types/domain'
 
 const ForceGraph3D = React.lazy(() => import('../graph/ForceGraph3DLazy'))
@@ -49,6 +50,75 @@ function paintRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w
 interface NetworkGraphProps {
   paper?: Paper | null
   slot?: 'primary' | 'compare'
+}
+
+// Fit the 3D camera to the node positions only (the library's zoomToFit also
+// measures the label sprites, which makes the graph look tiny). Fits each axis
+// against the matching FOV so wide-but-flat graphs still fill the viewport.
+function fitCamera3D(fg: any, nodes: GraphNode[], duration = 600) {
+  if (!fg?.cameraPosition) return
+  const pts = nodes.filter((n) => typeof n.x === 'number' && typeof n.y === 'number')
+  if (pts.length === 0) return
+  const min = (sel: (n: GraphNode) => number) => Math.min(...pts.map(sel))
+  const max = (sel: (n: GraphNode) => number) => Math.max(...pts.map(sel))
+  const minX = min((n) => n.x as number)
+  const maxX = max((n) => n.x as number)
+  const minY = min((n) => n.y as number)
+  const maxY = max((n) => n.y as number)
+  const minZ = min((n) => n.z ?? 0)
+  const maxZ = max((n) => n.z ?? 0)
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  const cz = (minZ + maxZ) / 2
+  const hx = (maxX - minX) / 2
+  const hy = (maxY - minY) / 2
+  const hz = (maxZ - minZ) / 2
+  const cam = fg.camera?.()
+  const fov = ((cam?.fov ?? 50) * Math.PI) / 180
+  const aspect = cam?.aspect || 1
+  const tan = Math.tan(fov / 2)
+  const dist = Math.max(hy, hz, hx / aspect, 1) / tan * 1.15 + 16
+  fg.cameraPosition({ x: cx, y: cy, z: cz + dist }, { x: cx, y: cy, z: cz }, duration)
+}
+
+interface Graph3DBoundaryProps {
+  resetKey: string
+  children: React.ReactNode
+}
+
+class Graph3DErrorBoundary extends React.Component<Graph3DBoundaryProps, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidUpdate(prev: Graph3DBoundaryProps) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) {
+      this.setState({ error: null })
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full items-center justify-center bg-gray-900">
+          <div className="max-w-sm text-center">
+            <p className="text-red-400">3D 视图渲染失败</p>
+            <p className="mt-2 break-words text-sm text-gray-400">{this.state.error.message}</p>
+            <button
+              type="button"
+              onClick={() => this.setState({ error: null })}
+              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              重试
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) => {
@@ -92,6 +162,24 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     [isCompare, setCompareSelectedNodeId, setSelectedNodeId],
   )
 
+  const focusNode = useCallback(
+    (node: GraphNode, duration = 700) => {
+      const x = node.x ?? 0
+      const y = node.y ?? 0
+      const z = node.z ?? 0
+      if (graphView === '3d') {
+        const dist = 160
+        const hyp = Math.hypot(x, y, z) || 1
+        const ratio = 1 + dist / hyp
+        fg3dRef.current?.cameraPosition({ x: x * ratio, y: y * ratio, z: z * ratio || dist }, { x, y, z }, duration)
+      } else {
+        fg2dRef.current?.centerAt(x, y, duration)
+        fg2dRef.current?.zoom(2.2, duration)
+      }
+    },
+    [graphView],
+  )
+
   const { data: networkData, isLoading, error } = usePaperNetwork(rootPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
   const notes = useNotesStore((s) => s.notes)
@@ -112,6 +200,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const [menu, setMenu] = useState<{ x: number; y: number; node: GraphNode } | null>(null)
   const [extra, setExtra] = useState<{ nodes: NetworkNode[]; edges: NetworkEdge[] }>({ nodes: [], edges: [] })
   const [expandingId, setExpandingId] = useState<string | null>(null)
+  const [nodeListOpen, setNodeListOpen] = useState(false)
+  const rootSelectedFor = useRef<string | null>(null)
 
   const setContainer = useCallback((el: HTMLDivElement | null) => {
     containerElRef.current = el
@@ -190,7 +280,33 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
 
   const positionsSavedAt = useRef(0)
 
+  // Select the root node once each time a new graph is generated (primary pane).
+  useEffect(() => {
+    if (isCompare || !cacheKey || graphData.nodes.length === 0) return
+    if (rootSelectedFor.current === cacheKey) return
+    rootSelectedFor.current = cacheKey
+    if (activeSelectionId && graphData.nodes.some((n) => n.id === activeSelectionId)) return
+    const root = graphData.nodes.find((n) => n.isRoot)
+    if (root) selectNode(root.id)
+  }, [isCompare, cacheKey, graphData, activeSelectionId, selectNode])
+
   const rootTitle = rootPaper?.title || undefined
+
+  const rootNode = useMemo(() => graphData.nodes.find((n) => n.isRoot) ?? null, [graphData])
+
+  const handleSelectRoot = useCallback(() => {
+    if (!rootNode) return
+    selectNode(rootNode.id)
+    focusNode(rootNode)
+  }, [rootNode, selectNode, focusNode])
+
+  const handleNodeListSelect = useCallback(
+    (node: GraphNode) => {
+      selectNode(node.id)
+      focusNode(node)
+    },
+    [selectNode, focusNode],
+  )
 
   const handleExportPng = useCallback(() => {
     const canvas = containerElRef.current?.querySelector('canvas') as HTMLCanvasElement | null
@@ -436,7 +552,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const linkColor = useCallback(
     (link: GraphLink) => {
       const base = EDGE_COLORS[link.type] ?? EDGE_COLORS.reference
+      // Root's direct predecessors/successors stay fully lit as a lineage cue.
+      const rootId = rootNode?.id
+      const isLineageEdge =
+        !!rootId &&
+        (link.type === 'reference' || link.type === 'citation') &&
+        (linkEndId(link.source) === rootId || linkEndId(link.target) === rootId)
       if (!activeId) {
+        if (isLineageEdge) return base
         // When colouring by community, fade edges that cross communities.
         if (colorMode === 'cluster') {
           const same = clusterById.get(linkEndId(link.source)) === clusterById.get(linkEndId(link.target))
@@ -447,7 +570,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
       return linkKeys.has(key) ? base : withAlpha(base, 0.06)
     },
-    [activeId, linkKeys, colorMode, clusterById],
+    [activeId, linkKeys, colorMode, clusterById, rootNode],
   )
 
   const nodeColor = useCallback(
@@ -485,13 +608,32 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       }
       if (fittedRef.current !== networkData) {
         fittedRef.current = networkData
-        const fg = graphView === '3d' ? fg3dRef.current : fg2dRef.current
-        fg?.zoomToFit?.(600, 60)
+        if (graphView === '3d') {
+          fitCamera3D(fg3dRef.current, graphData.nodes)
+        } else {
+          fg2dRef.current?.zoomToFit?.(600, 60)
+        }
       }
     },
     cooldownTicks: 200,
     warmupTicks: 30,
   }
+
+  const prevViewRef = useRef(graphView)
+
+  // Refit the camera when switching between 2D and 3D so the graph is not
+  // left small/off-centre in the newly mounted renderer.
+  useEffect(() => {
+    if (prevViewRef.current === graphView) return
+    prevViewRef.current = graphView
+    fittedRef.current = null
+    if (!dimensions) return
+    const timer = window.setTimeout(() => {
+      if (graphView === '3d') fitCamera3D(fg3dRef.current, graphData.nodes)
+      else fg2dRef.current?.zoomToFit?.(600, 60)
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [graphView, dimensions, graphData])
 
   useEffect(() => {
     if (graphView !== '2d') return
@@ -604,46 +746,66 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       )}
 
       {dimensions && graphView === '3d' && (
-        <React.Suspense
-          fallback={
-            <div className="flex h-full items-center justify-center text-gray-400">正在加载 3D 渲染器…</div>
-          }
-        >
-          <ForceGraph3D
-            ref={fg3dRef}
-            width={dimensions.width}
-            height={dimensions.height}
-            linkDirectionalParticles={2}
-            linkDirectionalParticleWidth={1.5}
-            nodeRelSize={2}
-            labelIds={labelIds3d}
-            rendererConfig={{ preserveDrawingBuffer: true }}
-            {...commonProps}
-          />
-        </React.Suspense>
+        <Graph3DErrorBoundary resetKey={`${cacheKey ?? ''}:${dimensions.width}x${dimensions.height}`}>
+          <React.Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center text-gray-400">正在加载 3D 渲染器…</div>
+            }
+          >
+            <ForceGraph3D
+              key={`3d:${cacheKey ?? ''}`}
+              ref={fg3dRef}
+              width={dimensions.width}
+              height={dimensions.height}
+              linkDirectionalParticles={2}
+              linkDirectionalParticleWidth={1.5}
+              nodeRelSize={2}
+              labelIds={labelIds3d}
+              rendererConfig={{ preserveDrawingBuffer: true }}
+              {...commonProps}
+            />
+          </React.Suspense>
+        </Graph3DErrorBoundary>
       )}
 
       <GraphToolbar
         placement={isCompare ? 'bottom-left' : 'top-left'}
+        nodeListOpen={nodeListOpen}
+        onToggleNodeList={() => setNodeListOpen((v) => !v)}
         onExportPng={handleExportPng}
         onExportJsonVisible={handleExportJsonVisible}
         onExportJsonFull={handleExportJsonFull}
         onExportBibtex={handleExportBibtex}
         onExportCsv={handleExportCsv}
       />
-      {!isCompare && <GraphLegend nodes={graphData.nodes} />}
-      {!isCompare && <GraphTimeline minYear={minYear} maxYear={maxYear} />}
+      {!isCompare && <GraphLegend nodes={graphData.nodes} rootNode={rootNode} onSelectRoot={handleSelectRoot} />}
+      {!isCompare && <GraphTimeline minYear={minYear} maxYear={maxYear} rootYear={rootNode?.year ?? null} />}
       {graphView === '2d' && engineTick > 0 && (
         <GraphMinimap nodes={graphData.nodes} selectedId={activeSelectionId} onSelect={handleMinimapSelect} />
       )}
 
-      <div
-        className={`absolute z-10 rounded-lg bg-gray-800/90 px-3 py-2 text-xs text-white ${
-          isCompare ? 'bottom-4 right-4' : 'right-4 top-4'
-        }`}
-      >
-        {filteredNodes.length} 节点 · {filteredEdges.length} 边
-      </div>
+      {nodeListOpen && (
+        <GraphNodeList
+          nodes={graphData.nodes}
+          selectedId={activeSelectionId}
+          onSelect={handleNodeListSelect}
+          onReroot={rerootFromNode}
+          onClose={() => setNodeListOpen(false)}
+        />
+      )}
+
+      {!nodeListOpen && (
+        <button
+          type="button"
+          onClick={() => setNodeListOpen(true)}
+          title="点击查看节点列表"
+          className={`absolute z-10 rounded-lg bg-gray-800/90 px-3 py-2 text-xs text-white transition-colors hover:bg-gray-700 ${
+            isCompare ? 'bottom-4 right-4' : 'right-4 top-4'
+          }`}
+        >
+          {filteredNodes.length} 节点 · {filteredEdges.length} 边
+        </button>
+      )}
 
       {hoverNode && pointer && <GraphTooltip node={hoverNode} x={pointer.x} y={pointer.y} />}
 
