@@ -38,6 +38,11 @@ export const config = {
     embeddingMinSim: num(Bun.env.EMBEDDING_MIN_SIM, 0.8),
   },
   arxiv: { base: 'http://export.arxiv.org/api' },
+  llm: {
+    translateTimeoutMs: num(Bun.env.TRANSLATE_TIMEOUT_MS, 120000),
+    translateBatchChars: num(Bun.env.TRANSLATE_BATCH_CHARS, 4000),
+    translateBatchTexts: num(Bun.env.TRANSLATE_BATCH_TEXTS, 20),
+  },
   server: {
     port: env.port,
     hostname: env.hostname,

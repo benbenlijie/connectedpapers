@@ -1,4 +1,5 @@
 import { chat, type ChatMessage, type ProviderConfig } from './llm'
+import { config } from './config'
 
 export function buildTranslateMessages(target: string, texts: string[], source?: string): ChatMessage[] {
   const from = source ? ` from ${source}` : ''
@@ -33,12 +34,39 @@ export function parseTranslationArray(content: string, expected: number): string
   return parsed as string[]
 }
 
+/** Split texts into sub-batches bounded by char budget and item count. An
+ * oversized single text is kept alone so no segment is ever dropped. */
+export function chunkTexts(texts: string[], maxChars: number, maxTexts: number): string[][] {
+  const out: string[][] = []
+  let cur: string[] = []
+  let chars = 0
+  for (const text of texts) {
+    if (cur.length > 0 && (cur.length >= maxTexts || chars + text.length > maxChars)) {
+      out.push(cur)
+      cur = []
+      chars = 0
+    }
+    cur.push(text)
+    chars += text.length
+  }
+  if (cur.length > 0) out.push(cur)
+  return out
+}
+
 export async function translateTexts(
   provider: ProviderConfig,
   texts: string[],
   target: string,
   source?: string,
 ): Promise<string[]> {
-  const content = await chat(provider, buildTranslateMessages(target, texts, source), { temperature: 0 })
-  return parseTranslationArray(content, texts.length)
+  const batches = chunkTexts(texts, config.llm.translateBatchChars, config.llm.translateBatchTexts)
+  const out: string[] = []
+  for (const batch of batches) {
+    const content = await chat(provider, buildTranslateMessages(target, batch, source), {
+      temperature: 0,
+      timeoutMs: config.llm.translateTimeoutMs,
+    })
+    out.push(...parseTranslationArray(content, batch.length))
+  }
+  return out
 }
