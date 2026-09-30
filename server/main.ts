@@ -65,9 +65,15 @@ const opencodeClient = createOpencodeClient(`http://127.0.0.1:${config.ai.port}`
 
 if (opencodeManager) {
   opencodeManager.start().catch((e) => console.error('[opencode] failed to start:', e))
-  const stop = () => void opencodeManager.stop()
-  process.on('SIGINT', stop)
-  process.on('SIGTERM', stop)
+  const shutdown = async () => {
+    try {
+      await opencodeManager.stop()
+    } finally {
+      process.exit(0)
+    }
+  }
+  process.on('SIGINT', () => void shutdown())
+  process.on('SIGTERM', () => void shutdown())
 }
 
 let server: ReturnType<typeof Bun.serve>
