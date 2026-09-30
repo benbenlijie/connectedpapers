@@ -116,6 +116,8 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `store/useReadingStore.ts` | Zustand store for reading status/progress, persisted to `localStorage`. |
 | `store/useHighlightsStore.ts` | Zustand store for reader highlights, persisted to `localStorage`. |
 | `store/useSearchHistoryStore.ts` | Zustand store for recent search queries, persisted to `localStorage`. |
+| `store/useLibraryStore.ts` | Zustand store for favorites, collections and saved searches (`localStorage`). |
+| `lib/library.ts` | Pure favorites / collections / saved-search operations. |
 | `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
 | `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
 | `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
@@ -428,6 +430,16 @@ retries stay spaced. OpenAlex requests append `api_key` when `OPENALEX_API_KEY`
 is set (alongside the existing polite-pool `mailto`), and S2 already sends
 `x-api-key`. This keeps fan-out crawls under the shared rate limits instead of
 bursting into 429s.
+
+### 26. Library: favorites, collections, saved searches
+
+`lib/library.ts` is a pure `Library` (`favorites: string[]`, `collections`,
+`savedSearches`) with immutable operations; `store/useLibraryStore.ts` persists it
+to `localStorage['connectedpapers.library.v1']`. `PaperList` shows a per-row star
+plus "仅看收藏" and a collection filter; `DetailsPanel` has a favorite toggle and
+an "加入集合" select (with 新建); `SearchBar` shows saved searches in its dropdown
+with a 保存当前 action. Collections store paper ids (same key convention as the
+reading list). Keys are not part of the graph, so no cache bump is involved.
 
 ## Data model
 

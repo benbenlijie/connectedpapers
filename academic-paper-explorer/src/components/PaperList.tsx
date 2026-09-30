@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare } from 'lucide-react'
+import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare, Star } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useReadingStore } from '../store/useReadingStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 import { READING_STATUSES, statusLabel, type ReadingStatus } from '../lib/reading'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
@@ -23,7 +24,11 @@ const PaperList: React.FC = () => {
   } = useUiStore()
   const readingEntries = useReadingStore((s) => s.entries)
   const setReadingStatus = useReadingStore((s) => s.setStatus)
+  const library = useLibraryStore((s) => s.library)
+  const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const [onlyList, setOnlyList] = useState(false)
+  const [favOnly, setFavOnly] = useState(false)
+  const [collectionFilter, setCollectionFilter] = useState('')
 
   const { data, isFetching, error, refetch } = useSearchPapers(submittedQuery)
   const searchResults = data?.papers ?? []
@@ -68,9 +73,14 @@ const PaperList: React.FC = () => {
   })
 
   const paperKey = (p: Paper) => p.id || p.semantic_scholar_id || p.openalex_id || p.doi || ''
-  const visibleResults = onlyList
-    ? filteredResults.filter((p) => readingEntries[paperKey(p)])
-    : filteredResults
+  const collection = library.collections.find((c) => c.id === collectionFilter)
+  const visibleResults = filteredResults.filter((p) => {
+    const key = paperKey(p)
+    if (onlyList && !readingEntries[key]) return false
+    if (favOnly && !library.favorites.includes(key)) return false
+    if (collection && !collection.paperIds.includes(key)) return false
+    return true
+  })
 
   const handlePaperSelect = (paper: Paper) => {
     selectRootPaper(paper)
@@ -153,6 +163,28 @@ const PaperList: React.FC = () => {
             />
             仅看阅读清单
           </label>
+          <label className="flex cursor-pointer items-center gap-1 text-xs text-gray-400">
+            <input
+              type="checkbox"
+              checked={favOnly}
+              onChange={(e) => setFavOnly(e.target.checked)}
+              className="accent-yellow-500"
+            />
+            仅看收藏
+          </label>
+          <select
+            aria-label="集合筛选"
+            value={collectionFilter}
+            onChange={(e) => setCollectionFilter(e.target.value)}
+            className="rounded bg-gray-700 px-1 py-0.5 text-xs text-gray-200"
+          >
+            <option value="">全部集合</option>
+            {library.collections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {searchWarning && (
@@ -178,6 +210,21 @@ const PaperList: React.FC = () => {
                 <h3 className="text-sm font-medium text-white line-clamp-2 flex-1">
                   {paper.title}
                 </h3>
+                <button
+                  type="button"
+                  aria-label={library.favorites.includes(paperKey(paper)) ? '取消收藏' : '收藏'}
+                  aria-pressed={library.favorites.includes(paperKey(paper))}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleFavorite(paperKey(paper))
+                  }}
+                  className={`ml-2 flex-shrink-0 rounded p-1 hover:bg-gray-500 ${
+                    library.favorites.includes(paperKey(paper)) ? 'text-yellow-400' : 'text-gray-400'
+                  }`}
+                  title="收藏"
+                >
+                  <Star className={`w-4 h-4 ${library.favorites.includes(paperKey(paper)) ? 'fill-current' : ''}`} />
+                </button>
                 <button
                   type="button"
                   aria-label="对比"

@@ -21,10 +21,12 @@ vi.mock('../hooks/useSearchPapers', () => ({
 import PaperList from './PaperList'
 import { useUiStore } from '../store/useUiStore'
 import { useReadingStore } from '../store/useReadingStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 
 beforeEach(() => {
   localStorage.clear()
   useReadingStore.setState({ entries: {} })
+  useLibraryStore.setState({ library: { favorites: [], collections: [], savedSearches: [] } })
   useUiStore.setState({
     selectedPaper: null,
     comparePaper: null,
@@ -57,6 +59,15 @@ describe('PaperList', () => {
     render(<PaperList />)
     expect(screen.getByText('Paper Two')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('仅看阅读清单'))
+    expect(screen.getByText('Paper One')).toBeInTheDocument()
+    expect(screen.queryByText('Paper Two')).not.toBeInTheDocument()
+  })
+
+  it('toggles favorites and filters to them', () => {
+    render(<PaperList />)
+    fireEvent.click(screen.getAllByRole('button', { name: '收藏' })[0])
+    expect(useLibraryStore.getState().library.favorites).toEqual(['p1'])
+    fireEvent.click(screen.getByLabelText('仅看收藏'))
     expect(screen.getByText('Paper One')).toBeInTheDocument()
     expect(screen.queryByText('Paper Two')).not.toBeInTheDocument()
   })

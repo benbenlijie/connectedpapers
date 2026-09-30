@@ -5,11 +5,16 @@ import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
 import { resolveClientId } from '../hooks/usePaperNetwork'
 import { useNotesStore } from '../store/useNotesStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 
 const DetailsPanel: React.FC = () => {
   const { selectedNodeId, selectedPaper, compareSelectedNodeId } = useUiStore()
   const notes = useNotesStore((s) => s.notes)
   const setNote = useNotesStore((s) => s.setNote)
+  const library = useLibraryStore((s) => s.library)
+  const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
+  const createCollection = useLibraryStore((s) => s.createCollection)
+  const addToCollection = useLibraryStore((s) => s.addToCollection)
   
   // 最近点击优先：对比图选中的节点 > 主图选中的节点 > 主图论文
   const paperId = compareSelectedNodeId || selectedNodeId || resolveClientId(selectedPaper)
@@ -129,9 +134,48 @@ const DetailsPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 我的笔记 */}
+        {/* 收藏 / 集合 */}
         {paperId && (
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => toggleFavorite(paperId)}
+              className={`flex items-center gap-1 rounded px-3 py-1 text-sm ${
+                library.favorites.includes(paperId)
+                  ? 'bg-yellow-600/80 text-white'
+                  : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+              }`}
+            >
+              ★ {library.favorites.includes(paperId) ? '已收藏' : '收藏'}
+            </button>
+            <select
+              aria-label="加入集合"
+              value=""
+              onChange={(e) => {
+                const value = e.target.value
+                if (!value || !paperId) return
+                if (value === '__new') {
+                  const name = window.prompt('新集合名称')
+                  if (name && name.trim()) addToCollection(createCollection(name.trim()), paperId)
+                } else {
+                  addToCollection(value, paperId)
+                }
+              }}
+              className="rounded bg-gray-700 px-2 py-1 text-sm text-gray-200"
+            >
+              <option value="">加入集合…</option>
+              {library.collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+              <option value="__new">＋ 新建集合</option>
+            </select>
+          </div>
+        )}
+
+        {/* 我的笔记 */}
+        {paperId && (          <div>
             <div className="mb-2 flex items-center justify-between">
               <h4 className="text-sm font-medium text-white">我的笔记</h4>
               {saved && <span className="text-xs text-green-400">已保存</span>}

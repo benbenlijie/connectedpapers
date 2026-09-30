@@ -9,10 +9,12 @@ vi.mock('../hooks/useSearchPapers', () => ({
 import SearchBar from './SearchBar'
 import { useUiStore } from '../store/useUiStore'
 import { useSearchHistoryStore } from '../store/useSearchHistoryStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 
 beforeEach(() => {
   localStorage.clear()
   useSearchHistoryStore.setState({ entries: [] })
+  useLibraryStore.setState({ library: { favorites: [], collections: [], savedSearches: [] } })
   useUiStore.setState({ submittedQuery: null })
 })
 
@@ -49,5 +51,18 @@ describe('SearchBar history', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '清空' }))
     expect(useSearchHistoryStore.getState().entries).toEqual([])
+  })
+
+  it('saves the current search and re-runs a saved search', () => {
+    render(<SearchBar />)
+    const input = screen.getByPlaceholderText(/输入关键词/)
+    fireEvent.change(input, { target: { value: 'attention' } })
+    fireEvent.focus(input)
+    fireEvent.click(screen.getByRole('button', { name: '保存当前' }))
+    expect(useLibraryStore.getState().library.savedSearches[0].query).toBe('attention')
+
+    fireEvent.focus(input)
+    fireEvent.click(screen.getByText('attention'))
+    expect(useUiStore.getState().submittedQuery).toEqual({ query: 'attention', query_type: 'keyword' })
   })
 })

@@ -3,6 +3,7 @@ import { Search, Loader2, History, X } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { useSearchHistoryStore } from '../store/useSearchHistoryStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 import { filterHistory } from '../lib/searchHistory'
 
 const SearchBar: React.FC = () => {
@@ -11,6 +12,9 @@ const SearchBar: React.FC = () => {
   const recordHistory = useSearchHistoryStore((s) => s.record)
   const removeHistory = useSearchHistoryStore((s) => s.remove)
   const clearHistory = useSearchHistoryStore((s) => s.clear)
+  const savedSearches = useLibraryStore((s) => s.library.savedSearches)
+  const saveSearch = useLibraryStore((s) => s.saveSearch)
+  const removeSavedSearch = useLibraryStore((s) => s.removeSavedSearch)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'keyword' | 'doi' | 'arxiv' | 's2_id'>('keyword')
   const [showHistory, setShowHistory] = useState(false)
@@ -18,11 +22,11 @@ const SearchBar: React.FC = () => {
   const { isFetching: isSearching } = useSearchPapers(submittedQuery)
   const suggestions = showHistory ? filterHistory(entries, searchQuery) : []
 
-  const runSearch = (query: string) => {
+  const runSearch = (query: string, type: typeof searchType = searchType) => {
     const value = query.trim()
     if (!value) return
     recordHistory(value)
-    submitQuery({ query: value, query_type: searchType })
+    submitQuery({ query: value, query_type: type })
     setShowHistory(false)
   }
 
@@ -86,7 +90,7 @@ const SearchBar: React.FC = () => {
           disabled={isSearching}
         />
 
-        {suggestions.length > 0 && (
+        {showHistory && (
           <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-gray-600 bg-gray-700 shadow-lg">
             <div className="flex items-center justify-between px-3 py-1.5 text-xs text-gray-400">
               <span className="flex items-center gap-1">
@@ -120,6 +124,49 @@ const SearchBar: React.FC = () => {
                     aria-label={`删除历史 ${q}`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => removeHistory(q)}
+                    className="mr-2 rounded p-1 text-gray-400 hover:bg-gray-500 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex items-center justify-between border-t border-gray-600 px-3 py-1.5 text-xs text-gray-400">
+              <span>保存的搜索</span>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={!searchQuery.trim()}
+                onClick={() => saveSearch(searchQuery.trim(), searchType)}
+                className="hover:text-white disabled:opacity-40"
+              >
+                保存当前
+              </button>
+            </div>
+            <ul className="max-h-48 overflow-y-auto">
+              {savedSearches.length === 0 && (
+                <li className="px-3 py-1.5 text-xs text-gray-500">暂无保存的搜索</li>
+              )}
+              {savedSearches.map((s) => (
+                <li key={s.id} className="flex items-center hover:bg-gray-600">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSearchType(s.query_type as typeof searchType)
+                      setSearchQuery(s.query)
+                      runSearch(s.query, s.query_type as typeof searchType)
+                    }}
+                    className="flex-1 truncate px-3 py-1.5 text-left text-sm text-gray-100"
+                  >
+                    {s.query}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`删除保存的搜索 ${s.query}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => removeSavedSearch(s.id)}
                     className="mr-2 rounded p-1 text-gray-400 hover:bg-gray-500 hover:text-white"
                   >
                     <X className="h-3 w-3" />
