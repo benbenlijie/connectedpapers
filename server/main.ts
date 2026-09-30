@@ -104,6 +104,10 @@ server = Bun.serve({
         }
       }
 
+      if (p.startsWith('/api/ai/') && !opencodeManager?.isHealthy()) {
+        throw new ApiError('LLM_UNAVAILABLE', 'AI 服务不可用，请稍后重试', 503)
+      }
+
       if (p === '/api/search' && req.method === 'POST') return await searchRoute(req)
       if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
       if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
