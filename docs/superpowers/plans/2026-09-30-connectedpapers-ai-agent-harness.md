@@ -774,7 +774,7 @@ git commit -m "feat(ai): internal token-guarded paper retrieval API"
 `server/opencode-config.test.ts`:
 ```ts
 import { test, expect } from 'bun:test'
-import { buildOpencodeConfig, buildPaperToolSource, OPENCODE_AGENT } from './opencode-config'
+import { buildOpencodeConfig, buildPaperToolSources, OPENCODE_AGENT } from './opencode-config'
 import type { ProviderConfig } from './llm'
 
 const provider: ProviderConfig = {
@@ -795,13 +795,16 @@ test('config injects the provider and a locked-down agent', () => {
   expect(cfg.agent[OPENCODE_AGENT].permission.webfetch).toBe('deny')
 })
 
-test('tool source references our internal API through env', () => {
-  const src = buildPaperToolSource()
-  expect(src).toContain('paper_search')
-  expect(src).toContain('paper_section')
-  expect(src).toContain('PAPER_API_BASE')
-  expect(src).toContain('X-Internal-Token')
-  expect(src).toContain('context.sessionID')
+test('tool sources are one default-exported file per tool name', () => {
+  const sources = buildPaperToolSources()
+  expect(Object.keys(sources).sort()).toEqual(['paper_search.ts', 'paper_section.ts'])
+  expect(sources['paper_search.ts']).toContain('export default tool')
+  expect(sources['paper_section.ts']).toContain('export default tool')
+  for (const src of Object.values(sources)) {
+    expect(src).toContain('PAPER_API_BASE')
+    expect(src).toContain('X-Internal-Token')
+    expect(src).toContain('context.sessionID')
+  }
 })
 ```
 
@@ -870,10 +873,13 @@ export function buildOpencodeConfig(provider: ProviderConfig, maxSteps: number):
   return JSON.stringify(cfg, null, 2)
 }
 
-export function buildPaperToolSource(): string {
-  return `import { tool } from "@opencode-ai/plugin"
-
-const base = process.env.PAPER_API_BASE ?? "http://127.0.0.1:8787/api"
+/**
+ * Tool name = filename for a default export, so each tool lives in its own file
+ * (`paper_search.ts` → `paper_search`). A named export would become
+ * `<filename>_<export>` (e.g. `paper_paper_search`).
+ */
+export function buildPaperToolSources(): Record<string, string> {
+  const helper = `const base = process.env.PAPER_API_BASE ?? "http://127.0.0.1:8787/api"
 const token = process.env.PAPER_INTERNAL_TOKEN ?? ""
 
 async function call(path: string): Promise<string> {
@@ -881,23 +887,31 @@ async function call(path: string): Promise<string> {
   if (!res.ok) return \`retrieval error \${res.status}\`
   return await res.text()
 }
+`
+  return {
+    'paper_search.ts': `import { tool } from "@opencode-ai/plugin"
 
-export const paper_search = tool({
+${helper}
+export default tool({
   description: "Search the current paper for passages relevant to a query. Call this before answering any factual question.",
   args: { query: tool.schema.string().describe("search keywords") },
   async execute(args, context) {
     return call(\`/paper/session/\${context.sessionID}/search?q=\${encodeURIComponent(args.query)}\`)
   },
 })
+`,
+    'paper_section.ts': `import { tool } from "@opencode-ai/plugin"
 
-export const paper_section = tool({
+${helper}
+export default tool({
   description: "Read the full text of one section of the current paper by its index (from paper_search results).",
   args: { idx: tool.schema.number().describe("section index") },
   async execute(args, context) {
     return call(\`/paper/session/\${context.sessionID}/section/\${args.idx}\`)
   },
 })
-`
+`,
+  }
 }
 ```
 
@@ -997,7 +1011,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { config } from './config'
 import { loadProviders } from './llm'
-import { buildOpencodeConfig, buildPaperToolSource } from './opencode-config'
+import { buildOpencodeConfig, buildPaperToolSources } from './opencode-config'
 import { INTERNAL_TOKEN } from './internal-token'
 
 export interface OpencodeClient {
@@ -1084,7 +1098,18 @@ export class OpencodeManager {
     writeFileSync(join(this.opts.runtimeDir, 'opencode.json'), buildOpencodeConfig(provider, config.ai.maxSteps), {
       mode: 0o600,
     })
-    writeFileSync(join(toolsDir, 'paper.ts'), buildPaperToolSource())
+    // One default-exported file per tool (filename becomes the tool name).
+    for (const [filename, source] of Object.entries(buildPaperToolSources())) {
+      writeFileSync(join(toolsDir, filename), source)
+    }
+
+    // Isolate from the user's global opencode config: the spike showed global
+    // agents/models/plugins leak in otherwise (findings §4).
+    const configHome = join(this.opts.runtimeDir, 'config')
+    const dataHome = join(this.opts.runtimeDir, 'data')
+    const cacheHome = join(this.opts.runtimeDir, 'cache')
+    const stateHome = join(this.opts.runtimeDir, 'state')
+    for (const dir of [configHome, dataHome, cacheHome, stateHome]) mkdirSync(dir, { recursive: true })
 
     this.proc = Bun.spawn(
       [config.ai.bin, 'serve', '--hostname', '127.0.0.1', '--port', String(this.opts.port)],
@@ -1092,6 +1117,10 @@ export class OpencodeManager {
         cwd: this.opts.runtimeDir,
         env: {
           ...process.env,
+          XDG_CONFIG_HOME: configHome,
+          XDG_DATA_HOME: dataHome,
+          XDG_CACHE_HOME: cacheHome,
+          XDG_STATE_HOME: stateHome,
           PAPER_API_BASE: `http://127.0.0.1:${config.server.port}/api`,
           PAPER_INTERNAL_TOKEN: INTERNAL_TOKEN,
         },
@@ -1151,29 +1180,40 @@ git commit -m "feat(ai): opencode process manager and HTTP client"
 - Create: `server/ai-events.ts`
 - Test: `server/ai-events.test.ts`
 
-**Note:** Reconcile the exact `type`/`properties` names with the Task 0 findings before implementing; the code below uses the shapes documented for opencode 1.18 (`message.part.updated`, `session.idle`, `session.error`) and must be adjusted to the captured samples.
+**Note:** shapes below are confirmed against the Task 0 spike
+(`docs/superpowers/spikes/2026-09-30-opencode-harness-findings.md` §3): text
+streams as `message.part.delta`, tools arrive via `message.part.updated`.
 
 - [ ] **Step 1: Write the failing test**
 
 `server/ai-events.test.ts`:
 ```ts
 import { test, expect } from 'bun:test'
-import { normalizeOpencodeEvent } from './ai-events'
+import { normalizeOpencodeEvent, serializeClientEvent } from './ai-events'
 
 const SID = 'sess-1'
 
-test('text parts become text events for the session', () => {
+test('text deltas become text events (delta, not a snapshot)', () => {
   const out = normalizeOpencodeEvent(SID, {
-    type: 'message.part.updated',
-    properties: { sessionID: SID, part: { type: 'text', text: 'Hello' } },
+    type: 'message.part.delta',
+    properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'The' },
   })
-  expect(out).toEqual({ type: 'text', text: 'Hello' })
+  expect(out).toEqual({ type: 'text', text: 'The' })
+})
+
+test('non-text deltas are ignored', () => {
+  expect(
+    normalizeOpencodeEvent(SID, {
+      type: 'message.part.delta',
+      properties: { sessionID: SID, field: 'reasoning', delta: 'x' },
+    }),
+  ).toBeNull()
 })
 
 test('events for other sessions are ignored', () => {
   const out = normalizeOpencodeEvent(SID, {
-    type: 'message.part.updated',
-    properties: { sessionID: 'other', part: { type: 'text', text: 'x' } },
+    type: 'message.part.delta',
+    properties: { sessionID: 'other', field: 'text', delta: 'x' },
   })
   expect(out).toBeNull()
 })
@@ -1205,6 +1245,10 @@ test('session.idle becomes done and session.error becomes error', () => {
   })
   expect(err).toEqual({ type: 'error', message: 'boom' })
 })
+
+test('serializeClientEvent produces an SSE frame', () => {
+  expect(serializeClientEvent({ type: 'done' })).toBe('data: {"type":"done"}\n\n')
+})
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1232,7 +1276,11 @@ function detailFromInput(input: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined
 }
 
-/** Map one opencode SSE event to a client event, or null when irrelevant. */
+/**
+ * Map one opencode SSE event to a client event, or null when irrelevant.
+ * Streaming text arrives as `message.part.delta` (shape captured in the spike,
+ * findings §3) — a delta, not a cumulative snapshot.
+ */
 export function normalizeOpencodeEvent(sessionId: string, event: RawEvent): AiClientEvent | null {
   const props = event.properties ?? {}
   const evSession = props.sessionID ?? props.part?.sessionID
@@ -1243,19 +1291,18 @@ export function normalizeOpencodeEvent(sessionId: string, event: RawEvent): AiCl
     if (evSession !== sessionId) return null
     return { type: 'error', message: props.error?.message ?? 'AI 运行出错' }
   }
+  if (event.type === 'message.part.delta') {
+    if (evSession !== sessionId || props.field !== 'text' || typeof props.delta !== 'string') return null
+    return { type: 'text', text: props.delta }
+  }
   if (event.type === 'message.part.updated') {
     if (evSession !== sessionId) return null
     const part = props.part
-    if (!part) return null
-    if (part.type === 'text' && typeof part.text === 'string') {
-      return { type: 'text', text: part.text }
-    }
-    if (part.type === 'tool' && typeof part.tool === 'string') {
-      const status = part.state?.status
-      if (status === 'completed') return { type: 'tool', name: part.tool, status: 'done' }
-      if (status === 'running' || status === 'pending') {
-        return { type: 'tool', name: part.tool, status: 'start', detail: detailFromInput(part.state?.input) }
-      }
+    if (!part || part.type !== 'tool' || typeof part.tool !== 'string') return null
+    const status = part.state?.status
+    if (status === 'completed') return { type: 'tool', name: part.tool, status: 'done' }
+    if (status === 'running' || status === 'pending') {
+      return { type: 'tool', name: part.tool, status: 'start', detail: detailFromInput(part.state?.input) }
     }
   }
   return null
@@ -1578,11 +1625,11 @@ describe('aiChat reducer', () => {
     expect(s.streaming).toBe(true)
   })
 
-  it('text events replace the streaming assistant text', () => {
+  it('text events append deltas to the streaming assistant text', () => {
     let s = startUserTurn(emptyChat(), 'q')
     s = reduceChat(s, { type: 'text', text: 'Hel' })
-    s = reduceChat(s, { type: 'text', text: 'Hello' })
-    expect(s.messages.at(-1)!.text).toBe('Hello')
+    s = reduceChat(s, { type: 'text', text: 'lo!' })
+    expect(s.messages.at(-1)!.text).toBe('Hello!')
   })
 
   it('tool events accumulate activity on the assistant message', () => {
@@ -1675,7 +1722,7 @@ function updateLastAssistant(state: ChatState, fn: (m: ChatMessage) => ChatMessa
 export function reduceChat(state: ChatState, event: AiClientEvent): ChatState {
   switch (event.type) {
     case 'text':
-      return updateLastAssistant(state, (m) => ({ ...m, text: event.text }))
+      return updateLastAssistant(state, (m) => ({ ...m, text: m.text + event.text }))
     case 'tool':
       return updateLastAssistant(state, (m) => ({
         ...m,
