@@ -10,6 +10,9 @@ import { llmStatusRoute } from './routes/llm'
 import { aiRoute } from './routes/ai'
 import { neighborsRoute } from './routes/neighbors'
 import { lineageRoute } from './routes/lineage'
+import { paperSearchRoute, paperSectionRoute } from './routes/paper'
+import { INTERNAL_TOKEN } from './internal-token'
+import { db } from './db'
 import { cookieHeader, clientIpFrom, extractToken, safeEqual, withBasePath } from './auth'
 import { createRateLimiter } from './rateLimit'
 
@@ -92,6 +95,13 @@ server = Bun.serve({
       if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
       if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
       if (p.startsWith('/api/neighbors/') && req.method === 'GET') return await neighborsRoute(p.split('/').pop()!)
+      if (p.startsWith('/api/paper/session/') && p.endsWith('/search') && req.method === 'GET') {
+        return await paperSearchRoute(req, db, INTERNAL_TOKEN)
+      }
+      const sectionMatch = p.match(/^\/api\/paper\/session\/([^/]+)\/section\/(\d+)$/)
+      if (sectionMatch && req.method === 'GET') {
+        return await paperSectionRoute(req, sectionMatch[1], Number(sectionMatch[2]), db, INTERNAL_TOKEN)
+      }
       if (p.startsWith('/api/')) throw new ApiError('VALIDATION_FAILED', `未知接口: ${p}`, 404)
       return await serveStatic(p)
     } catch (e) {
