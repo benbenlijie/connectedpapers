@@ -478,11 +478,11 @@ Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
   renderer and custom WebWorker d3-force layout were removed in favor of the
   library's own simulation. The 3D bundle (~349 kB gzip) is code-split and only
   fetched on first 3D switch; the initial bundle carries the 2D renderer.
-  `vite.config.ts` splits vendor chunks (`vendor-react`, `vendor-query`,
-  `vendor-router`, `vendor-ui`, `force-graph`, `three`) and
-  `React.lazy`-loads `ReaderPage`, so the initial `index` chunk is ~127 kB
-  (was ~513 kB). `chunkSizeWarningLimit` is raised to 1400 because the one large
-  chunk is the intentionally lazy `three`.
+  `React.lazy` loads `ReaderPage` on demand, so it is not in the initial chunk.
+  Manual vendor chunking was **removed**: splitting `react` from
+  `react-force-graph` created a cross-chunk init order where `React.forwardRef`
+  was undefined at run time (blank page). `chunkSizeWarningLimit` is raised to
+  1400 for the intentionally lazy `three` chunk.
 - **No authentication.** Acceptable while loopback-only; if the server is ever
   exposed beyond `127.0.0.1`, add auth and request limits.
 - **Single-process job queue.** Jobs are in-process and persisted only as rows; a
