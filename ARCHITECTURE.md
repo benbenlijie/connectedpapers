@@ -32,6 +32,9 @@ Hard constraints that shape every decision below:
     ├── GET  /api/jobs/:id server/routes/jobs.ts ─────┼──┐     │
     ├── POST /api/translate server/routes/translate.ts │  │     │
     ├── GET  /api/llm/status server/routes/llm.ts ─────┘  │     │
+    ├── POST /api/ai/*     server/routes/ai.ts ────────┼──┐   │
+    ├── GET  /api/ai/stream server/routes/ai.ts (SSE)  │  │   │
+    ├── GET  /api/paper/session/:id/* routes/paper.ts  │  │   │
     └── GET  *             static academic-paper-explorer/dist │
                            (SPA fallback to index.html)       │
                                                               │
@@ -41,7 +44,13 @@ Hard constraints that shape every decision below:
                            ▼                                  │
                     SQLite  data/app.db  ◄───────────────────┘
               (papers, authors, paper_authors, citations,
-               paper_networks, jobs, search_queries)
+               paper_networks, jobs, search_queries,
+               paper_content, paper_sections, ai_sessions)
+
+  AI sidecar:
+    server/opencode.ts spawns `opencode serve` (cwd data/opencode-runtime/,
+    XDG_* isolated); its tools call back to /api/paper/session/* with
+    X-Internal-Token; /api/ai/* proxies prompts + the /event SSE stream.
 
  Frontend state split:
    React Query  → server state (search results, details, network)
@@ -80,12 +89,19 @@ Hard constraints that shape every decision below:
 | `community.ts` | Louvain community detection (pure). |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
 | `llm.ts` | Configurable LLM providers (`LLM_PROVIDERS`), `chat` against OpenAI-compatible endpoints. |
-| `ai.ts` | Pure AI prompt construction (`explain`/`summarize`/`ask`). |
+| `opencode.ts` | `OpencodeManager`: spawns/supervises `opencode serve`, writes the isolated runtime dir, health check + stop; `createOpencodeClient` for the opencode HTTP API. |
+| `opencode-config.ts` | Builds `opencode.json` (provider + `paper-tutor` agent, denied built-in tools, system prompt) and the `paper_search`/`paper_section` tool sources. |
+| `paper-content.ts` | Fetches arXiv HTML, extracts sections into `paper_content`/`paper_sections`, TTL cache; abstract fallback. |
+| `paper-search.ts` | `rankSections`: lexical ranking of paragraphs for `paper_search`. |
+| `ai-events.ts` | Pure normalization of opencode SSE events → client `{ type: delta\|tool\|done\|error }` events. |
+| `ai-sessions.ts` | `arxivId ↔ session_id` mapping in `ai_sessions` (`getSession`/`setSession`/`getArxivBySession`). |
+| `internal-token.ts` | Per-boot `INTERNAL_TOKEN` guarding the retrieval API (env override). |
 | `translate.ts` | Translation prompt construction + tolerant JSON-array parsing. |
 | `translation-cache.ts` | Translation cache keyed by `(target, source)`. |
 | `routes/llm.ts` | `GET /api/llm/status`: public provider list (no secrets). |
 | `routes/translate.ts` | `POST /api/translate`: cache + batch translate through a provider. |
-| `routes/ai.ts` | `POST /api/ai`: explain/summarize/ask over an openai provider. |
+| `routes/ai.ts` | `POST /api/ai/session\|chat\|abort`, `GET /api/ai/history\|stream`: proxy to opencode + SSE. |
+| `routes/paper.ts` | `GET /api/paper/session/:id/search\|section/:idx`: token-guarded retrieval API for the agent tools. |
 | `db-queries.ts` | `queryHash`, `getCachedNetwork`, `cacheNetwork`, `logSearch`. |
 | `db.ts` | SQLite handle + schema application. |
 | `config.ts` | Typed config (crawl limits, cache TTL/version, upstream bases, server). |
@@ -111,7 +127,10 @@ Hard constraints that shape every decision below:
 | `lib/article.ts` | Pure arXiv URL builders, HTML sanitizer and outline extraction. |
 | `lib/readerBlocks.ts` | Pure block selection + bilingual translation DOM helpers. |
 | `lib/translator.ts` | Client provider orchestration: browser built-in + `/api/translate`, with fallback + cache. |
-| `lib/ai.ts` | Client provider orchestration for `/api/ai` (openai providers, fallback). |
+| `lib/aiAgent.ts` | Client for `/api/ai/*` (session/chat/abort/history) plus the SSE reader with pure event-normalization helpers. |
+| `lib/aiChat.ts` | Shared `AiClientEvent` types + chat reducer (append deltas, tool activity, error, done). |
+| `store/useAiChatStore.ts` | Zustand store holding per-paper chat transcripts, streaming state and abort control. |
+| `components/AiAssistantPanel.tsx` | Reader "AI 助手" chat UI: message list, input, streaming bubble, tool chips, error/retry, stop. |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap, node context menu. |
@@ -282,16 +301,61 @@ reader runs translations in batches of 15 with a cancel flag, shows
 provider is configured. A one-time click listener toggles individual
 translations.
 
-### 13. AI Q&A in the reader
+### 13. AI assistant as an opencode agent
 
-`server/ai.ts` builds prompts for `explain` / `summarize` / `ask` (answer
-language fixed by `target`, optional paper context, excerpt and question), and
-`routes/ai.ts` runs them through an openai provider via `chat`. The reader's
-collapsible "AI 助手" panel captures the iframe selection on `mouseup` and calls
-`lib/ai.ts:askAi`, which walks the openai providers from `/api/llm/status`
-(client-side fallback, same pattern as translation) and returns
-`{ answer, provider }`. The panel is disabled unless an openai provider exists,
-since the browser translator cannot answer questions.
+Reading questions are answered by a multi-turn agent that retrieves the paper's
+own text **on demand** instead of answering from the model's memory.
+
+- **Manager (`server/opencode.ts`)** — on boot, when `config.ai.enabled` (env
+  `OPENCODE_ENABLED != 0`) and an `openai` provider exists,
+  `OpencodeManager.start()` writes an isolated runtime dir
+  `data/opencode-runtime/` (gitignored): `opencode.json` from
+  `opencode-config.ts` plus `.opencode/tools/paper_search.ts` and
+  `paper_section.ts` (one default export per file, so the tool name is the
+  filename). It spawns `opencode serve --hostname 127.0.0.1 --port
+  config.ai.port` with `cwd` = runtime dir and
+  `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_CACHE_HOME`/`XDG_STATE_HOME` all inside
+  it — the spike showed the user's global agents/models/plugins leak in
+  otherwise. `PAPER_API_BASE` + `PAPER_INTERNAL_TOKEN` are injected into the
+  tool env. `GET /global/health` is polled up to 15s; the process is killed and
+  the dir removed on SIGINT/SIGTERM; `isHealthy()` reflects readiness.
+- **Config (`opencode-config.ts`)** — injects the first `openai` `LLM_PROVIDERS`
+  entry as an `@ai-sdk/openai-compatible` provider, and one agent `paper-tutor`
+  with the model, `steps = AI_MAX_STEPS`, a system prompt that orders retrieval
+  before answering, and `permission: deny` for
+  `read/edit/glob/grep/list/bash/task/webfetch/websearch/lsp/skill/external_directory`
+  (only our custom tools remain, so there is no shell/file surface).
+- **Retrieval (`paper-content.ts` + `routes/paper.ts`)** — `paper-content.ts`
+  fetches `arxiv.org/html/{id}`, extracts title/sections/paragraphs with Bun's
+  `HTMLRewriter`, and caches them in `paper_content`/`paper_sections` with a
+  `PAPER_CONTENT_TTL_HOURS` TTL (abstract fallback via `arxiv.ts` when HTML is
+  missing). The tools call `GET /api/paper/session/:id/search?q=` (ranked
+  paragraphs via `rankSections`) and `GET /api/paper/session/:id/section/:idx`
+  (full section); both require `X-Internal-Token` (`internal-token.ts`) supplied
+  from opencode's env.
+- **Sessions (`ai-sessions.ts`)** — `POST /api/ai/session` maps an `arxivId` to
+  a persistent opencode session in `ai_sessions` (created once, reused); opencode
+  owns the message history.
+- **Chat + streaming (`routes/ai.ts`, `ai-events.ts`)** — `POST /api/ai/chat`
+  forwards `prompt_async(agent=paper-tutor, model, parts=[excerpt? + question +
+  target language])` (the model must be in the body — the spike confirmed the
+  global default otherwise leaks in). `GET /api/ai/stream?sessionId=` subscribes
+  to opencode `/event`, filters to the session, and
+  `ai-events.ts:normalizeOpencodeEvent` maps `message.part.delta` (append) →
+  `delta` and `message.part.updated` (tool parts) → `tool`, ending on
+  `session.idle` → `done`, relayed as SSE. `history` proxies
+  `GET /session/:id/message`; `abort` proxies `POST /session/:id/abort`.
+- **Frontend** — `components/AiAssistantPanel.tsx` renders the chat (message
+  list, streaming bubble, tool chips, retry/stop) using
+  `store/useAiChatStore.ts` for per-paper transcripts and `lib/aiChat.ts` for the
+  reducer; `lib/aiAgent.ts` is the `/api/ai/*` client plus SSE reader. The reader
+  bootstraps a session per paper and reloads history on mount.
+- **Security posture** — the paper text is untrusted: the system prompt instructs
+  the agent to ignore instructions found inside retrieved content
+  (prompt-injection defense) and to answer only from retrieved text. The provider
+  key lives only in the `0600` runtime config (never in the DB or sent to the
+  client), `steps` caps cost, and unhealthy/missing opencode makes `/api/ai/*`
+  return `503` while translation is unaffected.
 
 ### 14. Reading queue and progress
 
@@ -513,6 +577,12 @@ Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
   `query_hash`), `status`, `attempts`, `progress` (JSON), `result_hash`, `error`.
 - **`search_queries`** — append-only search log: query text/type, result count,
   execution time.
+- **`paper_content`** — cached arXiv HTML extraction per `arxiv_id` (PK): title,
+  `source`, `fetched_at`, `expires_at` (TTL).
+- **`paper_sections`** — section rows (`arxiv_id`, `idx`) with `heading`/`text`,
+  cascade-deleted with `paper_content`.
+- **`ai_sessions`** — `arxiv_id` (PK) → `session_id` (unique) mapping for the
+  per-paper opencode sessions, with `created_at`/`updated_at`.
 
 ## Known limitations & future work
 
