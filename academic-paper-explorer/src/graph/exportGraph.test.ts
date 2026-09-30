@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { buildExportPayload, sanitizeFilename, exportFilename, downloadText } from './exportGraph'
+import { buildExportPayload, sanitizeFilename, exportFilename, downloadText, toBibtex, toCsv } from './exportGraph'
 import type { NetworkEdge, NetworkNode } from '../types/domain'
 
-const node = (id: string): NetworkNode => ({
+const node = (id: string, over: Partial<NetworkNode> = {}): NetworkNode => ({
   id, label: id, title: id, citationCount: 0, authors: '', isRoot: false,
-  pageRankScore: 0, clusterId: 0, size: 1, color: '#000000',
+  pageRankScore: 0, clusterId: 0, size: 1, color: '#000000', ...over,
 })
 
 const edge = (from: string, to: string): NetworkEdge => ({ from, to, type: 'reference', weight: 1 })
@@ -74,5 +74,25 @@ describe('downloadText', () => {
     expect(createUrl).toHaveBeenCalledOnce()
     expect(click).toHaveBeenCalledOnce()
     expect(revokeUrl).toHaveBeenCalledWith('blob:fake')
+  })
+})
+
+describe('toBibtex', () => {
+  it('emits an @article entry with title, author and year', () => {
+    const out = toBibtex([node('a', { title: 'A Title', authors: 'Jane Doe', year: 2020 })])
+    expect(out).toContain('@article{')
+    expect(out).toContain('title = {A Title}')
+    expect(out).toContain('author = {Jane Doe}')
+    expect(out).toContain('year = {2020}')
+  })
+})
+
+describe('toCsv', () => {
+  it('writes a header and escapes commas and quotes', () => {
+    const out = toCsv([node('a', { title: 'A, B', authors: 'X "Y"' })])
+    const [header, row] = out.trim().split('\n')
+    expect(header).toBe('id,title,authors,year,venue,citation_count,url')
+    expect(row).toContain('"A, B"')
+    expect(row).toContain('"X ""Y"""')
   })
 })

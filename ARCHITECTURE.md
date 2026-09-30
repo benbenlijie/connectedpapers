@@ -199,14 +199,15 @@ explicit network params so a freshly chosen paper gets adaptive defaults again.
 ### 7. Graph export (PNG / JSON)
 
 `graph/exportGraph.ts` separates the testable parts (`sanitizeFilename`,
-`exportFilename`, `buildExportPayload`) from two thin DOM helpers
-(`downloadText`, `downloadCanvasPng`). The toolbar's export menu offers PNG of
-the current view, JSON of the current (filtered) view, and JSON of the full
-fetched network; the JSON payload carries a `meta` block (`scope`, `root_title`,
-counts, timestamp). PNG is captured from the single `<canvas>` inside the graph
-container, so overlays (toolbar, legend, minimap) are intentionally excluded. The
-3D renderer is created with `rendererConfig: { preserveDrawingBuffer: true }`;
-without it a WebGL `toDataURL` returns a blank image.
+`exportFilename`, `buildExportPayload`, `toBibtex`, `toCsv`) from two thin DOM
+helpers (`downloadText`, `downloadCanvasPng`). The toolbar's export menu offers PNG
+of the current view, JSON of the current (filtered) view, JSON of the full fetched
+network, and BibTeX/CSV of the visible nodes; the JSON payload carries a `meta`
+block (`scope`, `root_title`, counts, timestamp). PNG is captured from the single
+`<canvas>` inside the graph container, so overlays (toolbar, legend, minimap) are
+intentionally excluded. The 3D renderer is created with
+`rendererConfig: { preserveDrawingBuffer: true }`; without it a WebGL `toDataURL`
+returns a blank image.
 
 ### 8. Local paper notes
 
