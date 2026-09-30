@@ -27,8 +27,9 @@ export function htmlUrl(arxivId: string): string {
 /** Extract title + sections from arXiv HTML using Bun's built-in HTMLRewriter. */
 export async function extractSections(html: string): Promise<{ title: string; sections: PaperSection[] }> {
   const sections: PaperSection[] = []
+  const stack: PaperSection[] = []
   let title = ''
-  let current: PaperSection | null = null
+  const top = (): PaperSection | null => stack[stack.length - 1] ?? null
 
   const rewriter = new HTMLRewriter()
     .on('title', {
@@ -37,18 +38,24 @@ export async function extractSections(html: string): Promise<{ title: string; se
       },
     })
     .on('section', {
-      element() {
-        current = { idx: sections.length, heading: '', text: '' }
-        sections.push(current)
+      element(el) {
+        const section: PaperSection = { idx: sections.length, heading: '', text: '' }
+        sections.push(section)
+        stack.push(section)
+        el.onEndTag(() => {
+          stack.pop()
+        })
       },
     })
     .on('section h2, section h3', {
       text(chunk) {
+        const current = top()
         if (current && current.heading.length < 120) current.heading += chunk.text
       },
     })
     .on('section p, section li', {
       text(chunk) {
+        const current = top()
         if (current) current.text += chunk.text
       },
     })
@@ -84,22 +91,25 @@ export function getCachedContent(arxivId: string, dbIn: Database = defaultDb): P
 }
 
 export function saveContent(content: PaperContent, ttlHours: number, dbIn: Database = defaultDb): void {
-  dbIn.run(
-    `insert into paper_content (arxiv_id, title, source, fetched_at, expires_at)
-     values (?,?,?,datetime('now'), datetime('now', ?))
-     on conflict(arxiv_id) do update set title=excluded.title, source=excluded.source,
-       fetched_at=datetime('now'), expires_at=excluded.expires_at`,
-    [content.arxivId, content.title, content.source, `+${ttlHours} hours`],
-  )
-  dbIn.run('delete from paper_sections where arxiv_id=?', [content.arxivId])
-  for (const s of content.sections) {
-    dbIn.run('insert into paper_sections (arxiv_id, idx, heading, text) values (?,?,?,?)', [
-      content.arxivId,
-      s.idx,
-      s.heading,
-      s.text,
-    ])
-  }
+  const write = dbIn.transaction(() => {
+    dbIn.run(
+      `insert into paper_content (arxiv_id, title, source, fetched_at, expires_at)
+       values (?,?,?,datetime('now'), datetime('now', ?))
+       on conflict(arxiv_id) do update set title=excluded.title, source=excluded.source,
+         fetched_at=datetime('now'), expires_at=excluded.expires_at`,
+      [content.arxivId, content.title, content.source, `+${ttlHours} hours`],
+    )
+    dbIn.run('delete from paper_sections where arxiv_id=?', [content.arxivId])
+    for (const s of content.sections) {
+      dbIn.run('insert into paper_sections (arxiv_id, idx, heading, text) values (?,?,?,?)', [
+        content.arxivId,
+        s.idx,
+        s.heading,
+        s.text,
+      ])
+    }
+  })
+  write()
 }
 
 export async function loadPaperContent(
