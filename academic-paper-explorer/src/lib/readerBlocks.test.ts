@@ -3,8 +3,12 @@ import {
   collectBlocks,
   markBlock,
   insertTranslation,
+  insertPlaceholder,
+  updateTranslation,
+  failPendingTranslations,
   removeTranslations,
   setTranslationsVisible,
+  toggleTranslation,
   ensureTranslationStyle,
   SOURCE_ATTR,
   TRANSLATION_ATTR,
@@ -78,6 +82,69 @@ describe('removeTranslations / setTranslationsVisible', () => {
     expect((node as HTMLElement).style.display).toBe('none')
     setTranslationsVisible(d, true)
     expect((node as HTMLElement).style.display).toBe('')
+  })
+})
+
+describe('toggleTranslation', () => {
+  function make(html = '你好，世界'): { node: HTMLElement } {
+    const d = doc('<p>Hello world</p>')
+    const block = collectBlocks(d)[0]
+    return { node: insertTranslation(d, block, '0', html) as HTMLElement }
+  }
+
+  it('collapses to a visible placeholder instead of vanishing', () => {
+    const { node } = make()
+    toggleTranslation(node)
+    expect(node.textContent).not.toBe('')
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(true)
+    expect((node as HTMLElement).style.display).not.toBe('none')
+    expect(node.getAttribute(TRANSLATION_ATTR)).toBe('')
+  })
+
+  it('restores the full text on a second click', () => {
+    const { node } = make('你好，世界')
+    toggleTranslation(node)
+    toggleTranslation(node)
+    expect(node.textContent).toBe('你好，世界')
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(false)
+  })
+})
+
+describe('progressive translations', () => {
+  it('inserts a pending placeholder and reuses it on repeat calls', () => {
+    const d = doc('<p>Hello world</p>')
+    const block = collectBlocks(d)[0]
+    markBlock(block, '0')
+    const node = insertPlaceholder(d, block, '0') as HTMLElement
+    expect(node.textContent).toBe('翻译中…')
+    expect(node.classList.contains('cn-translation--pending')).toBe(true)
+    const again = insertPlaceholder(d, block, '0')
+    expect(again).toBe(node)
+    expect(d.querySelectorAll(`[${TRANSLATION_ATTR}]`)).toHaveLength(1)
+  })
+
+  it('fills a placeholder and clears the pending state', () => {
+    const d = doc('<p>Hello world</p>')
+    const block = collectBlocks(d)[0]
+    markBlock(block, '0')
+    const node = insertPlaceholder(d, block, '0') as HTMLElement
+    updateTranslation(d, '0', '你好，世界')
+    expect(node.textContent).toBe('你好，世界')
+    expect(node.classList.contains('cn-translation--pending')).toBe(false)
+  })
+
+  it('marks still-pending nodes failed while keeping finished ones', () => {
+    const d = doc('<p>One here</p><p>Two here</p>')
+    const blocks = collectBlocks(d)
+    blocks.forEach((b, i) => {
+      markBlock(b, String(i))
+      insertPlaceholder(d, b, String(i))
+    })
+    updateTranslation(d, '0', '第一')
+    failPendingTranslations(d)
+    const nodes = d.querySelectorAll<HTMLElement>(`[${TRANSLATION_ATTR}]`)
+    expect(nodes[0].textContent).toBe('第一')
+    expect(nodes[1].textContent).toBe('翻译失败')
   })
 })
 
