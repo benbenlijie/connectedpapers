@@ -9,7 +9,8 @@ import {
   sanitizeArticleHtml,
   type OutlineItem,
 } from '../lib/article'
-import { fetchProviders, prepareBrowserTranslator, translate, chunk, type PublicProvider } from '../lib/translator'
+import { fetchProviders, getCachedTranslation, prepareBrowserTranslator, translate, type PublicProvider } from '../lib/translator'
+import { createTranslationQueue } from '../lib/translationQueue'
 import AiAssistantPanel from '../components/AiAssistantPanel'
 import { useReadingStore } from '../store/useReadingStore'
 import { READING_STATUSES, type ReadingStatus } from '../lib/reading'
@@ -26,15 +27,16 @@ import {
 } from '../lib/highlights'
 import {
   collectBlocks,
+  blockSourceText,
   ensureTranslationStyle,
   failPendingTranslations,
   insertPlaceholder,
-  markBlock,
   removeTranslations,
+  restoreCachedTranslations,
   toggleTranslation,
   updateTranslation,
-  SOURCE_ATTR,
   TRANSLATION_ATTR,
+  TRANSLATION_FOR_ATTR,
 } from '../lib/readerBlocks'
 
 type Status = 'loading' | 'ready' | 'error'
@@ -46,6 +48,9 @@ const TARGETS: { value: string; label: string }[] = [
 ]
 
 const BATCH_SIZE = 4
+// Lazy translation prefetch: translate blocks within N viewports above/below
+// the visible area, then keep up as the user scrolls.
+const TRANSLATE_SCREENS = 2
 
 const ReaderPage: React.FC = () => {
   const { arxivId } = useParams<{ arxivId: string }>()
@@ -56,6 +61,11 @@ const ReaderPage: React.FC = () => {
   const navigate = useNavigate()
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cancelRef = useRef(false)
+  const translatingRef = useRef(false)
+  const boundDocRef = useRef<Document | null>(null)
+  const sessionRef = useRef(0)
+  const scrollAbortRef = useRef<AbortController | null>(null)
+  const pumpingRef = useRef(0)
   const [status, setStatus] = useState<Status>('loading')
   const [html, setHtml] = useState('')
   const [outline, setOutline] = useState<OutlineItem[]>([])
@@ -86,6 +96,16 @@ const ReaderPage: React.FC = () => {
     }
     let cancelled = false
     setStatus('loading')
+    setTranslated(false)
+    setTranslateError(null)
+    setProgress({ done: 0, total: 0 })
+    boundDocRef.current = null
+    translatingRef.current = false
+    // Invalidate any in-flight lazy session for the previous paper.
+    cancelRef.current = true
+    sessionRef.current += 1
+    scrollAbortRef.current?.abort()
+    scrollAbortRef.current = null
     fetch(arxivHtmlUrl(arxivId))
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -138,6 +158,11 @@ const ReaderPage: React.FC = () => {
   const handleFrameLoad = useCallback(() => {
     const doc = frameRef.current?.contentDocument
     if (!doc) return
+    // The iframe can fire `load` after images settle, sometimes after the user
+    // already started translating. Bind each document exactly once so restore
+    // and the delegated listeners are not applied twice.
+    if (boundDocRef.current === doc) return
+    boundDocRef.current = doc
     const bs = collectBlocks(doc)
     blocksRef.current = bs
 
@@ -147,6 +172,17 @@ const ReaderPage: React.FC = () => {
       if (!block) continue
       const range = anchorToRange(doc, block, hl.start, hl.end)
       if (range) applyHighlight(doc, range, hl.id, hl.color)
+    }
+
+    if (!translatingRef.current) {
+      const restored = restoreCachedTranslations(doc, bs, (text) => getCachedTranslation(target, text))
+      if (restored > 0) {
+        ensureTranslationStyle(doc)
+        // Fully restored papers show as translated; a partial restore leaves the
+        // toggle on "翻译" so the user can lazily fill the rest.
+        setTranslated(restored === bs.length)
+        setProgress({ done: restored, total: bs.length })
+      }
     }
 
     doc.addEventListener('click', (e) => {
@@ -182,7 +218,7 @@ const ReaderPage: React.FC = () => {
         useReadingStore.getState().setProgress(readingKey, Math.round((el.scrollTop / max) * 100))
       }
     }, { passive: true })
-  }, [readingKey])
+  }, [readingKey, target])
 
   const saveHighlight = useCallback(
     (color: HighlightColor) => {
@@ -236,45 +272,104 @@ const ReaderPage: React.FC = () => {
     [activeHl, readingKey, deleteHighlight, addHighlight],
   )
 
-  const untranslate = useCallback(() => {
-    const doc = frameRef.current?.contentDocument
+  const stopTranslate = useCallback((doc: Document | null) => {
+    cancelRef.current = true
+    translatingRef.current = false
+    sessionRef.current += 1
+    scrollAbortRef.current?.abort()
+    scrollAbortRef.current = null
     if (doc) removeTranslations(doc)
     setTranslated(false)
+    setTranslating(false)
     setProgress({ done: 0, total: 0 })
     setTranslateError(null)
   }, [])
 
-  const runTranslate = useCallback(
-    async (lang: string, doc: Document, blocks: Element[]) => {
+  const startTranslate = useCallback(
+    (lang: string, doc: Document, blocks: Element[]) => {
       if (providers.some((p) => p.kind === 'browser')) prepareBrowserTranslator(lang)
+      cancelRef.current = false
+      translatingRef.current = true
+      const session = ++sessionRef.current
+
+      const done = new Set<number>()
+      blocks.forEach((_, i) => {
+        if (doc.querySelector(`[${TRANSLATION_FOR_ATTR}="${i}"]`)) done.add(i)
+      })
+      const queue = createTranslationQueue(blocks.length, done)
+
+      ensureTranslationStyle(doc)
+      setTranslated(true)
       setTranslating(true)
       setTranslateError(null)
-      setProgress({ done: 0, total: blocks.length })
-      ensureTranslationStyle(doc)
-      blocks.forEach((el, i) => {
-        markBlock(el, String(i))
-        insertPlaceholder(doc, el, String(i))
-      })
-      cancelRef.current = false
-      let done = 0
-      try {
-        for (const batch of chunk(blocks, BATCH_SIZE)) {
-          if (cancelRef.current) break
-          const texts = batch.map((el) => (el.textContent ?? '').trim())
-          const result = await translate(texts, lang)
-          if (cancelRef.current) break
-          batch.forEach((el, k) => updateTranslation(doc, markId(el), result.translations[k]))
-          done += batch.length
-          setProgress({ done, total: blocks.length })
+      setProgress({ done: queue.doneCount(), total: blocks.length })
+
+      const stale = () => sessionRef.current !== session || cancelRef.current
+
+      // Drain queued blocks in document order. The observer keeps adding to the
+      // queue as the user scrolls, so each await re-checks for more work.
+      const pump = async (): Promise<void> => {
+        if (pumpingRef.current === session || stale()) return
+        pumpingRef.current = session
+        try {
+          while (!stale()) {
+            const batch = queue.takeBatch(BATCH_SIZE)
+            if (batch.length === 0) break
+            batch.forEach((i) => insertPlaceholder(doc, blocks[i], String(i)))
+            const texts = batch.map((i) => blockSourceText(blocks[i]))
+            const result = await translate(texts, lang)
+            if (stale()) break
+            batch.forEach((i, k) => updateTranslation(doc, String(i), result.translations[k]))
+            batch.forEach((i) => queue.markDone(i))
+            setProgress({ done: queue.doneCount(), total: blocks.length })
+          }
+        } catch (e) {
+          if (!stale()) {
+            failPendingTranslations(doc)
+            setTranslateError(e instanceof Error ? e.message : '翻译失败')
+          }
+        } finally {
+          if (pumpingRef.current === session) pumpingRef.current = 0
+          if (!stale() && !queue.isIdle()) {
+            void pump()
+          } else if (!stale()) {
+            setTranslating(false)
+          }
         }
-        if (cancelRef.current) failPendingTranslations(doc)
-        else setTranslated(true)
-      } catch (e) {
-        failPendingTranslations(doc)
-        setTranslateError(e instanceof Error ? e.message : '翻译失败')
-      } finally {
-        setTranslating(false)
       }
+
+      // Enqueue blocks within the prefetch window. `getBoundingClientRect` is
+      // relative to the iframe viewport, so this tracks the iframe's own scroll
+      // reliably (an IntersectionObserver rooted at the parent frame does not
+      // update for in-iframe scrolling).
+      let scheduled = false
+      const scan = () => {
+        scheduled = false
+        if (stale()) return
+        const viewport = doc.documentElement.clientHeight
+        const margin = viewport * TRANSLATE_SCREENS
+        let added = false
+        for (let i = 0; i < blocks.length; i++) {
+          if (queue.isDone(i)) continue
+          const rect = blocks[i].getBoundingClientRect()
+          if (rect.bottom >= -margin && rect.top <= viewport + margin) {
+            if (queue.enqueue(i)) added = true
+          }
+        }
+        if (added) void pump()
+      }
+      const scheduleScan = () => {
+        if (scheduled || stale()) return
+        scheduled = true
+        const view = doc.defaultView
+        if (view) view.requestAnimationFrame(scan)
+        else setTimeout(scan, 100)
+      }
+
+      const abort = new AbortController()
+      scrollAbortRef.current = abort
+      doc.addEventListener('scroll', scheduleScan, { passive: true, signal: abort.signal })
+      scan()
     },
     [providers],
   )
@@ -283,33 +378,34 @@ const ReaderPage: React.FC = () => {
     const doc = frameRef.current?.contentDocument
     if (!doc) return
     if (translated || translating) {
-      cancelRef.current = true
-      untranslate()
+      stopTranslate(doc)
       return
     }
     const blocks = collectBlocks(doc)
     if (blocks.length === 0) return
-    void runTranslate(target, doc, blocks)
-  }, [translated, translating, target, untranslate, runTranslate])
+    startTranslate(target, doc, blocks)
+  }, [translated, translating, target, stopTranslate, startTranslate])
 
   const onTargetChange = useCallback(
     (value: string) => {
       setTarget(value)
       const doc = frameRef.current?.contentDocument
-      if (translated && doc) {
-        removeTranslations(doc)
-        setTranslated(false)
+      if ((translated || translating) && doc) {
+        stopTranslate(doc)
         const blocks = collectBlocks(doc)
-        if (blocks.length > 0) void runTranslate(value, doc, blocks)
+        if (blocks.length > 0) startTranslate(value, doc, blocks)
       }
     },
-    [translated, runTranslate],
+    [translated, translating, stopTranslate, startTranslate],
   )
 
   const aiEnabled = providers.some((p) => p.kind === 'openai')
 
   useEffect(() => () => {
     cancelRef.current = true
+    sessionRef.current += 1
+    scrollAbortRef.current?.abort()
+    scrollAbortRef.current = null
   }, [])
 
   const abs = arxivId ? arxivAbsUrl(arxivId) : '#'
@@ -561,10 +657,6 @@ const ReaderPage: React.FC = () => {
       </div>
     </div>
   )
-}
-
-function markId(el: Element): string {
-  return el.getAttribute(SOURCE_ATTR) ?? ''
 }
 
 export default ReaderPage

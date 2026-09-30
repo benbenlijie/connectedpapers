@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   collectBlocks,
+  blockSourceText,
   markBlock,
   insertTranslation,
   insertPlaceholder,
   updateTranslation,
   failPendingTranslations,
   removeTranslations,
+  restoreCachedTranslations,
   setTranslationsVisible,
   toggleTranslation,
   ensureTranslationStyle,
@@ -39,6 +41,24 @@ describe('collectBlocks', () => {
 
   it('returns an empty list for a document with no blocks', () => {
     expect(collectBlocks(doc('<div>no block elements</div>'))).toEqual([])
+  })
+})
+
+describe('blockSourceText', () => {
+  it('does not duplicate the LaTeX carried in a MathML annotation', () => {
+    const d = doc(
+      '<p>Given <math><semantics><mrow><mi>x</mi><mn>1</mn></mrow>' +
+        '<annotation encoding="application/x-tex">x_{1}</annotation></semantics></math> sample</p>',
+    )
+    expect(blockSourceText(collectBlocks(d)[0])).toBe('Given x1 sample')
+  })
+
+  it('ignores an inserted translation placeholder inside a table cell', () => {
+    const d = doc('<table><tr><td>Cell text here</td></tr></table>')
+    const cell = collectBlocks(d)[0]
+    markBlock(cell, '0')
+    insertPlaceholder(d, cell, '0')
+    expect(blockSourceText(cell)).toBe('Cell text here')
   })
 })
 
@@ -154,5 +174,47 @@ describe('ensureTranslationStyle', () => {
     ensureTranslationStyle(d)
     ensureTranslationStyle(d)
     expect(d.querySelectorAll('style[data-cn-style]')).toHaveLength(1)
+  })
+})
+
+describe('restoreCachedTranslations', () => {
+  it('inserts finished translations for blocks that have a cache hit', () => {
+    const d = doc('<p>Hello world</p><p>Second block</p>')
+    const blocks = collectBlocks(d)
+    const n = restoreCachedTranslations(d, blocks, (text) =>
+      text === 'Hello world' ? '你好，世界' : undefined,
+    )
+    expect(n).toBe(1)
+    const node = d.querySelector<HTMLElement>(`[${TRANSLATION_ATTR}]`)
+    expect(node?.textContent).toBe('你好，世界')
+    expect(node?.classList.contains('cn-translation--pending')).toBe(false)
+    expect(blocks[0].getAttribute(SOURCE_ATTR)).toBe('0')
+  })
+
+  it('returns zero and inserts nothing when the cache is cold', () => {
+    const d = doc('<p>Hello world</p>')
+    const blocks = collectBlocks(d)
+    expect(restoreCachedTranslations(d, blocks, () => undefined)).toBe(0)
+    expect(d.querySelectorAll(`[${TRANSLATION_ATTR}]`)).toHaveLength(0)
+  })
+
+  it('reuses an in-flight placeholder instead of inserting a duplicate', () => {
+    const d = doc('<p>Hello world</p>')
+    const blocks = collectBlocks(d)
+    markBlock(blocks[0], '0')
+    insertPlaceholder(d, blocks[0], '0')
+    restoreCachedTranslations(d, blocks, () => '你好，世界')
+    const nodes = d.querySelectorAll<HTMLElement>(`[${TRANSLATION_ATTR}]`)
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].textContent).toBe('你好，世界')
+    expect(nodes[0].classList.contains('cn-translation--pending')).toBe(false)
+  })
+
+  it('is idempotent when run twice for the same document', () => {
+    const d = doc('<p>Hello world</p>')
+    const blocks = collectBlocks(d)
+    restoreCachedTranslations(d, blocks, () => '你好')
+    restoreCachedTranslations(d, blocks, () => '你好')
+    expect(d.querySelectorAll(`[${TRANSLATION_ATTR}]`)).toHaveLength(1)
   })
 })

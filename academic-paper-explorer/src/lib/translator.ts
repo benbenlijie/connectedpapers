@@ -20,8 +20,133 @@ export interface TranslateDeps {
 
 const cache = new Map<string, string>()
 
+export const TRANSLATION_STORAGE_KEY = 'cp.translations.v1'
+const DEFAULT_CACHE_BUDGET = 4_000_000
+let cacheBudget = DEFAULT_CACHE_BUDGET
+let cacheChars = 0
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function localStorageOrNull(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+}
+
+function evictOldest(): void {
+  while (cacheChars > cacheBudget && cache.size > 0) {
+    const oldest = cache.keys().next().value as string
+    cacheChars -= oldest.length + (cache.get(oldest)?.length ?? 0)
+    cache.delete(oldest)
+  }
+}
+
+function remember(key: string, value: string): void {
+  const existing = cache.get(key)
+  if (existing !== undefined) cacheChars -= key.length + existing.length
+  cache.delete(key)
+  cache.set(key, value)
+  cacheChars += key.length + value.length
+  evictOldest()
+}
+
+function schedulePersist(): void {
+  if (!localStorageOrNull() || persistTimer !== null) return
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    flushTranslationCache()
+  }, 500)
+}
+
+/** Write the in-memory cache to localStorage. Safe to call with no storage. */
+export function flushTranslationCache(): void {
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  const store = localStorageOrNull()
+  if (!store) return
+  try {
+    store.setItem(TRANSLATION_STORAGE_KEY, JSON.stringify(Object.fromEntries(cache)))
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name
+    if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      // Browser quota hit: shrink to half and retry once, then give up gracefully.
+      cacheBudget = Math.max(0, Math.floor(cacheChars / 2))
+      evictOldest()
+      try {
+        store.setItem(TRANSLATION_STORAGE_KEY, JSON.stringify(Object.fromEntries(cache)))
+      } catch {
+        // keep the in-memory cache only
+      }
+    }
+  }
+}
+
+/** Replace the in-memory cache with the persisted one. Corrupt data is ignored. */
+export function loadTranslationCache(): void {
+  const store = localStorageOrNull()
+  if (!store) return
+  let raw: string | null = null
+  try {
+    raw = store.getItem(TRANSLATION_STORAGE_KEY)
+  } catch {
+    return
+  }
+  if (!raw) return
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+    const next = new Map<string, string>()
+    let chars = 0
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'string') {
+        next.set(key, value)
+        chars += key.length + value.length
+      }
+    }
+    cache.clear()
+    for (const [key, value] of next) cache.set(key, value)
+    cacheChars = chars
+    evictOldest()
+  } catch {
+    // ignore corrupt persisted cache
+  }
+}
+
+/** Test/maintenance hook: shrink the budget and evict immediately. */
+export function setTranslationCacheBudget(chars: number): void {
+  cacheBudget = chars
+  evictOldest()
+  schedulePersist()
+}
+
+loadTranslationCache()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => flushTranslationCache())
+}
+
 export function clearTranslationCache(): void {
   cache.clear()
+  cacheChars = 0
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  const store = localStorageOrNull()
+  if (store) {
+    try {
+      store.removeItem(TRANSLATION_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function getCachedTranslation(target: string, text: string): string | undefined {
+  return cache.get(cacheKey(target, text))
 }
 
 export function cacheKey(target: string, text: string): string {
@@ -34,11 +159,29 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out
 }
 
-export async function fetchProviders(): Promise<PublicProvider[]> {
-  const res = await fetch(`${API_BASE}/llm/status`)
-  if (!res.ok) throw new Error(`加载翻译 provider 失败: ${res.status}`)
-  const body = await res.json()
-  return (body?.data?.providers ?? []) as PublicProvider[]
+let providersPromise: Promise<PublicProvider[]> | null = null
+
+/** Fetch the provider list once per page session. `translate()` calls this on
+ * every batch, so caching it avoids hammering `/api/llm/status` (and the API
+ * rate limiter) once per translated block batch. */
+export function fetchProviders(): Promise<PublicProvider[]> {
+  if (!providersPromise) {
+    providersPromise = (async () => {
+      const res = await fetch(`${API_BASE}/llm/status`)
+      if (!res.ok) throw new Error(`加载翻译 provider 失败: ${res.status}`)
+      const body = await res.json()
+      return (body?.data?.providers ?? []) as PublicProvider[]
+    })().catch((e) => {
+      providersPromise = null
+      throw e
+    })
+  }
+  return providersPromise
+}
+
+/** Drop the memoized provider list (e.g. after a provider config change). */
+export function clearProviderCache(): void {
+  providersPromise = null
 }
 
 interface BrowserTranslator {
@@ -144,8 +287,9 @@ export async function translate(
       if (out.length !== pending.length) throw new Error('译文数量与输入不匹配')
       missing.forEach((idx, k) => {
         results[idx] = out[k]
-        cache.set(cacheKey(target, texts[idx]), out[k])
+        remember(cacheKey(target, texts[idx]), out[k])
       })
+      schedulePersist()
       return { translations: results, provider: provider.name }
     } catch (e) {
       lastError = e
