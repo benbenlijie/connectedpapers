@@ -457,6 +457,18 @@ session-only (not in the URL).
 (`togglePlay`), so pressing play always has somewhere to go, and a "全部" button
 clears the filter (replacing the bare ✕).
 
+### 29. Public deployment gate
+
+`config.server.accessToken` (env `ACCESS_TOKEN`) turns on a single-token gate for
+**all** requests when set (off by default, so local use is unchanged). `auth.ts`
+extracts the token from `Authorization: Bearer`, `x-access-token`, the `cp_token`
+cookie, or `?token=`, comparing it constant-time (`safeEqual`); a valid `?token=`
+returns a 302 that sets an HttpOnly cookie (Secure behind TLS) and strips the
+token from the URL. Over-limit `/api/*` requests are rejected 429 by a per-IP
+fixed-window limiter (`rateLimit.ts:createRateLimiter`), using
+`X-Forwarded-For` only when `TRUST_PROXY=1`. Deployment behind nginx with TLS and
+systemd is documented in `DEPLOYMENT_GUIDE.md` §5.
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to

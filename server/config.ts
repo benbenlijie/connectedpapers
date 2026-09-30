@@ -38,5 +38,11 @@ export const config = {
     embeddingMinSim: num(Bun.env.EMBEDDING_MIN_SIM, 0.8),
   },
   arxiv: { base: 'http://export.arxiv.org/api' },
-  server: { port: env.port, hostname: env.hostname },
+  server: {
+    port: env.port,
+    hostname: env.hostname,
+    accessToken: env.accessToken,
+    trustProxy: env.trustProxy,
+    rateLimitPerMin: num(Bun.env.RATE_LIMIT_PER_MIN, 120),
+  },
 } as const

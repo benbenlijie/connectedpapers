@@ -82,6 +82,101 @@ systemctl --user enable --now connectedpapers.service
 - 更新代码后需要重新执行 `bun run build:web` 再重启服务。
 - 前端未构建时，根路径会返回提示 JSON，提示先运行 `bun run build:web`。
 
+## 5. 公网部署（nginx + 域名 watchdeep.net）
+
+> ⚠️ 本应用**无内置账号体系**。直接暴露公网会让任何人都能消耗你的 LLM/S2 额度。务必：**开 `ACCESS_TOKEN`**（口令）并**只经 HTTPS 反向代理**访问。
+
+### 5.1 DNS
+在域名服务商为 `watchdeep.net`（及 `www`）添加 **A 记录**指向你的服务器公网 IP。
+
+### 5.2 服务器准备
+```bash
+# 安装 Bun / pnpm（见官方文档），然后：
+git clone <repo> && cd connectedpapers
+bash scripts/setup.sh
+bun run build:web
+```
+
+编辑 `server/.env`：
+```env
+ACCESS_TOKEN=换成一段足够长的随机口令
+TRUST_PROXY=1
+HOST=127.0.0.1
+PORT=8787
+CONTACT_EMAIL=你的邮箱
+SEMANTIC_SCHOLAR_API_KEY=...        # 可选，更稳
+OPENALEX_API_KEY=...               # 可选，摆脱匿名限流
+LLM_PROVIDERS=[...]                # 翻译/AI 需要
+```
+
+### 5.3 systemd 常驻（系统级）
+`/etc/systemd/system/connectedpapers.service`：
+```ini
+[Unit]
+Description=ConnectedPapers
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/srv/connectedpapers
+ExecStart=/home/www-data/.bun/bin/bun run server
+Restart=on-failure
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now connectedpapers
+```
+
+### 5.4 nginx 反向代理
+`/etc/nginx/sites-available/watchdeep.net`：
+```nginx
+server {
+    listen 80;
+    server_name watchdeep.net www.watchdeep.net;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 建图任务最长约 45s，轮询期间保持连接
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+```
+```bash
+sudo ln -s /etc/nginx/sites-available/watchdeep.net /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 5.5 HTTPS 证书（Let's Encrypt）
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d watchdeep.net -d www.watchdeep.net
+```
+certbot 会自动改写为 443 并启用跳转与自动续期。
+
+### 5.6 防火墙
+```bash
+sudo ufw allow 80,443/tcp
+sudo ufw deny 8787/tcp   # 应用端口不对外
+```
+
+### 5.7 访问
+浏览器打开 `https://watchdeep.net/?token=你的口令` 一次，服务端写入 Cookie 后会跳转到 `https://watchdeep.net/`，之后正常使用。
+
+### 5.8 备份与更新
+```bash
+cp data/app.db data/app.db.bak        # 备份
+git pull && bun run build:web && sudo systemctl restart connectedpapers
+```
+
 ## 验证
 
 启动后访问 `http://127.0.0.1:8787`，确认：页面正常加载、搜索可用、论文详情正常、网络图可生成。

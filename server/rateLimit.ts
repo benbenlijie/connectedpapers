@@ -18,3 +18,21 @@ export function createLimiter(minIntervalMs: number) {
     return run
   }
 }
+
+/** Fixed-window per-key rate limiter; returns true when the call is allowed. */
+export function createRateLimiter(opts: { windowMs: number; max: number; now?: () => number }) {
+  const hits = new Map<string, { count: number; reset: number }>()
+  const now = opts.now ?? Date.now
+
+  return function check(key: string): boolean {
+    const t = now()
+    const record = hits.get(key)
+    if (!record || t >= record.reset) {
+      hits.set(key, { count: 1, reset: t + opts.windowMs })
+      return true
+    }
+    if (record.count >= opts.max) return false
+    record.count++
+    return true
+  }
+}
