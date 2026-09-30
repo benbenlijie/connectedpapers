@@ -6,6 +6,7 @@
 
 - **Bun** ≥ 1.3
 - **pnpm** 9
+- **opencode**（可选，AI 助手需要）：安装后 `opencode --version` 应正常输出版本（本特性按 1.18.33 验证）。
 
 ## 1. 初始化
 
@@ -43,6 +44,15 @@ bun run server
 ```bash
 PORT=9000 bun run server
 ```
+
+### AI 助手（opencode agent，可选）
+
+阅读器内的 AI 助手依赖 `opencode`：
+
+- 服务端启动时会尝试拉起 `opencode serve`（复用 `LLM_PROVIDERS` 中第一个 `kind: "openai"` 条目）。`opencode` 必须在 `PATH` 中，或用 `OPENCODE_BIN=/绝对路径/opencode` 指定；否则启动日志会打印 `[opencode] failed to start`。
+- 需要至少配置一个 `openai` provider（见 README 的 LLM provider 一节），否则 AI 接口返回 `503`。
+- 健康检查：opencode 不可用（未安装、`OPENCODE_ENABLED=0` 或未配置 provider）时，`POST /api/ai/session` 返回 `503`；翻译功能不受影响。
+- 运行时隔离在 `data/opencode-runtime/`（已随 `data/` 忽略），可安全删除；服务重启会重建。
 
 ## 4. 常驻运行（可选）
 
@@ -107,6 +117,8 @@ CONTACT_EMAIL=你的邮箱
 SEMANTIC_SCHOLAR_API_KEY=...        # 可选，更稳
 OPENALEX_API_KEY=...               # 可选，摆脱匿名限流
 LLM_PROVIDERS=[...]                # 翻译/AI 需要
+OPENCODE_BIN=/usr/local/bin/opencode  # AI 助手需要；不在 PATH 时填绝对路径
+# OPENCODE_ENABLED=0              # 设为 0 可关闭 AI 助手（保留翻译）
 ```
 
 ### 5.3 systemd 常驻（系统级）

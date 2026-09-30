@@ -16,7 +16,7 @@ Academic Paper Explorer 是一个学术论文搜索与引用关系网络可视�
 - **收藏 / 集合 / 保存搜索**：星标收藏论文、加入自定义集合并保存常用搜索（本地存储）；列表可"仅看收藏"或按集合筛选。- **双论文对比**：将第二篇论文加入对比，左右并排展示两张引用网络图（共享过滤/编码，各自选中高亮）。
 - **应用内阅读（arXiv HTML）**：有 arXiv 版的论文可在 `/read/:arxivId` 全屏阅读 HTML 正文（带章节大纲），无需离开应用；无 HTML 版回退到 arXiv abs/PDF 链接。
 - **沉浸式翻译**：阅读器内一键双语对照，译文显示在每段下方（可逐段折叠）；走可配置 provider（浏览器内置 Translator 或后端 LLM），失败自动降级。
-- **AI 阅读辅助**：阅读器中选中文本可让 AI 解释/总结/提问（需配置后端 LLM provider）。
+- **AI 阅读辅助（opencode agent）**：阅读器内的多轮 AI 助手由本地 `opencode serve` agent 驱动；回答前按需调用检索工具读取论文全文（`paper_search` / `paper_section`），答案基于论文正文而非模型记忆，流式输出并标注"正在检索…""读取第 N 节"等工具活动。
 - **阅读队列/进度**：为论文标记待读/在读/已读（本地 localStorage），列表可筛选阅读清单，阅读器记录滚动进度。
 - **阅读器高亮/批注**：阅读器中选中文本可高亮（黄/绿/粉）并写备注，点击高亮可改色或删除（本地 localStorage）。
 - **本地优先**：单进程本地服务，数据落盘到本地 SQLite，无需外部后端服务。
@@ -94,6 +94,21 @@ LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1",
 - `kind: "browser"`：浏览器内置 Translator API，前端本地执行，无需 key。
 - 未配置时翻译接口返回 `LLM_UNAVAILABLE`，可在部署时按需填写候选。
 
+### AI 助手（opencode agent）
+
+AI 助手需要主机上安装 `opencode` 二进制（`opencode --version` 可验证）；服务端在启动时按需拉起 `opencode serve`，复用 `LLM_PROVIDERS` 中第一个 `kind: "openai"` 条目作为模型，前端只与本服务的 `/api/ai/*` 通信。新环境变量：
+
+```env
+OPENCODE_ENABLED=1            # 默认 1；设为 0 关闭 AI 助手
+OPENCODE_BIN=opencode         # opencode 可执行文件路径（不在 PATH 时用绝对路径）
+OPENCODE_PORT=4096            # 本地 opencode 实例端口
+AI_MAX_STEPS=8                # agent 单轮最大工具步数
+PAPER_CONTENT_TTL_HOURS=168   # 论文正文缓存 TTL（小时）
+INTERNAL_TOKEN=               # 可选；检索内部 API 的共享口令，缺省每启动随机
+```
+
+未配置 `openai` provider 或 opencode 不可用（`OPENCODE_ENABLED=0`、二进制缺失）时，AI 接口返回 `503`，翻译功能不受影响。
+
 ## API 路由
 
 本地服务在 `http://127.0.0.1:8787` 上提供：
@@ -104,7 +119,13 @@ LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1",
 - `GET /api/jobs/:id` — 查询异步任务状态
 - `GET /api/neighbors/:id` — 查询本地已持久化的关系（引用/相关/耦合）
 - `POST /api/translate` — 批量翻译（走可配置的 LLM provider）
-- `POST /api/ai` — 阅读辅助问答（解释 / 总结 / 提问）
+- `POST /api/ai/session` — 按论文获取/创建 opencode 会话
+- `POST /api/ai/chat` — 转发用户消息给 agent（`paper-tutor`）
+- `GET /api/ai/stream?sessionId=` — 以 SSE 转发助手增量与工具活动
+- `GET /api/ai/history?sessionId=` — 读取会话历史
+- `POST /api/ai/abort` — 中止进行中的回答
+- `GET /api/paper/session/:id/search?q=` — 检索正文段落（内部 `X-Internal-Token` 保护）
+- `GET /api/paper/session/:id/section/:idx` — 读取整节正文（内部 `X-Internal-Token` 保护）
 - `GET /api/llm/status` — 查询可用的 LLM/翻译 provider 候选
 
 静态前端由同一进程托管。
