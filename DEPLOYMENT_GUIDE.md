@@ -198,6 +198,26 @@ location /papers/ {
 
 访问 `https://你的域名/papers/?token=口令` 即可。
 
+## 7. 快速更新（本地改完一键发布）
+
+线上已按 §6 部署在 `https://watchdeep.net/papers/`（systemd `connectedpapers`，目录 `/opt/connectedpapers`）。日常改代码后：
+
+```bash
+bun run deploy          # = bash scripts/deploy.sh
+```
+
+脚本会：按 `VITE_BASE=/papers/` 构建前端 → `rsync` 同步（排除 .git/node_modules/data/server/.env）→ `systemctl restart connectedpapers` → 健康检查。
+
+常用变体：
+
+```bash
+SKIP_WEB=1 bun run deploy      # 只改了后端/配置，跳过前端构建
+SKIP_RESTART=1 bun run deploy  # 只同步，不重启
+REMOTE=other-host DIR=/srv/app VITE_BASE=/base/ bun run deploy
+```
+
+参数见 `scripts/deploy.sh` 头部。查看访问口令：`ssh webserver "grep ^ACCESS_TOKEN= /opt/connectedpapers/server/.env"`。
+
 ## 验证
 
 启动后访问 `http://127.0.0.1:8787`，确认：页面正常加载、搜索可用、论文详情正常、网络图可生成。

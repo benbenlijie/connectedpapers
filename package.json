@@ -6,7 +6,8 @@
     "test:server": "bun test server/",
     "typecheck:server": "bunx tsc --noEmit -p server/tsconfig.json",
     "dev:web": "pnpm --dir academic-paper-explorer dev",
-    "build:web": "pnpm --dir academic-paper-explorer build"
+    "build:web": "pnpm --dir academic-paper-explorer build",
+    "deploy": "bash scripts/deploy.sh"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2"
