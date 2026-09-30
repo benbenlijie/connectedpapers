@@ -54,31 +54,41 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
 
   useEffect(() => () => unsubRef.current?.(), [])
 
+  const subscribe = useCallback(
+    (id: string) => {
+      unsubRef.current?.()
+      unsubRef.current = streamEvents(
+        id,
+        (event) => applyEvent(arxivId, event),
+        (e) => {
+          setError(e instanceof Error ? e.message : '事件流断开')
+          void reloadHistory(id)
+        },
+      )
+    },
+    [arxivId, applyEvent, reloadHistory],
+  )
+
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || !sessionId) return
     setInput('')
     setError(null)
     beginTurn(arxivId, text)
-    unsubRef.current?.()
-    unsubRef.current = streamEvents(
-      sessionId,
-      (event) => applyEvent(arxivId, event),
-      (e) => {
-        setError(e instanceof Error ? e.message : '事件流断开')
-        void reloadHistory(sessionId)
-      },
-    )
+    subscribe(sessionId)
     try {
       const returned = await sendMessage({ sessionId, message: text, excerpt: selection || undefined, target })
-      if (returned.sessionId !== sessionId) setSession(arxivId, returned.sessionId)
+      if (returned.sessionId !== sessionId) {
+        setSession(arxivId, returned.sessionId)
+        subscribe(returned.sessionId)
+      }
     } catch (e) {
       unsubRef.current?.()
       unsubRef.current = null
       setError(e instanceof Error ? e.message : '发送失败')
       applyEvent(arxivId, { type: 'error', message: e instanceof Error ? e.message : '发送失败' })
     }
-  }, [input, sessionId, arxivId, selection, target, beginTurn, applyEvent, setSession, reloadHistory])
+  }, [input, sessionId, arxivId, selection, target, beginTurn, applyEvent, setSession, subscribe])
 
   const stop = useCallback(() => {
     if (sessionId) void abortSession(sessionId)

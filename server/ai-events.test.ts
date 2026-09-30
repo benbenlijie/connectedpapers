@@ -60,6 +60,12 @@ test('bare session.idle with no sessionID still yields done', () => {
   expect(normalizeOpencodeEvent(SID, { type: 'session.idle', properties: {} })).toEqual({ type: 'done' })
 })
 
+test('idle for a different sessionID is ignored', () => {
+  expect(
+    normalizeOpencodeEvent(SID, { type: 'session.idle', properties: { sessionID: 'other' } }),
+  ).toBeNull()
+})
+
 test('numeric tool input is stringified for the detail', () => {
   const out = normalizeOpencodeEvent(SID, {
     type: 'message.part.updated',
