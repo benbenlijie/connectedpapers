@@ -119,3 +119,10 @@ create table if not exists paper_relations (
 );
 create index if not exists paper_relations_from_idx on paper_relations(from_id, type);
 create index if not exists paper_relations_to_idx   on paper_relations(to_id, type);
+
+create table if not exists paper_embeddings (
+  id         text primary key,
+  model      text not null,
+  vector     text not null,
+  updated_at text not null default (datetime('now'))
+);

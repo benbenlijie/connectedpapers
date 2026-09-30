@@ -60,6 +60,7 @@ export function persistRelations(
   edges: { from: string; to: string; type: string; weight: number }[],
   dbIn: Database = defaultDb,
 ): void {
-  const sourceOf = (type: string) => (type === 'coupling' ? 'local' : type === 'related' ? 'related' : 's2')
+  const sourceOf = (type: string) =>
+    type === 'coupling' ? 'local' : type === 'related' ? 'related' : type === 'semantic' ? 'semantic' : 's2'
   for (const e of edges) upsertRelation(e.from, e.to, e.type, e.weight, sourceOf(e.type), dbIn)
 }

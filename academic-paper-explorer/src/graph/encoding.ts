@@ -8,6 +8,7 @@ export const EDGE_COLORS: Record<EdgeType, string> = {
   citation: '#4ade80',
   related: '#fbbf24',
   coupling: '#a78bfa',
+  semantic: '#2dd4bf',
 }
 
 const CLUSTER_PALETTE = [

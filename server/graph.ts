@@ -1,6 +1,7 @@
-import { getPapersBatch, getRecommendations, type S2Paper } from './s2'
-import { getRelatedWorksByDoi } from './openalex'
+import { getPapersBatch, getRecommendations, getEmbeddingsBatch, type S2Paper } from './s2'
+import { getRelatedWorksForPaper } from './openalex'
 import { canonicalKeyFromS2, mergeDuplicates, normalizeDoi } from './identity'
+import { getEmbeddings, semanticNeighborEdges, upsertEmbedding } from './embeddings'
 import { config } from './config'
 import { upsertPaper, upsertCitation, ensurePaperStub } from './papers'
 import { persistRelations } from './relations'
@@ -11,7 +12,7 @@ export interface GraphNode {
   fieldsOfStudy: string[]; isRoot: boolean; depth: number
   pageRankScore: number; clusterId: number; size: number; color: string
 }
-export interface GraphEdge { from: string; to: string; type: 'reference' | 'citation' | 'related' | 'coupling'; weight: number }
+export interface GraphEdge { from: string; to: string; type: 'reference' | 'citation' | 'related' | 'coupling' | 'semantic'; weight: number }
 export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export function connectedComponents(nodes: GraphNode[], edges: GraphEdge[]): Map<string, number> {
@@ -251,7 +252,13 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
 
   const merged = mergeDuplicates([...nodes.values()], edges, canonicalOf)
   const nodeList = merged.nodes
-  const edgeList = merged.edges
+  const edgeList = [...merged.edges]
+
+  try {
+    edgeList.push(...(await addSemanticEdges(nodeList)))
+  } catch {
+    // semantic edges are best-effort
+  }
 
   try {
     persistRelations(edgeList)
@@ -270,8 +277,38 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
 }
 
 /** Add `related` neighbours from S2 recommendations and OpenAlex (best-effort). */
-async function safeRecommendationIds(s2Path: string): Promise<string[]> {
-  try {
+/** Best-effort SPECTER2 kNN edges over cached/short-batch vectors. */
+async function addSemanticEdges(nodeList: GraphNode[]): Promise<GraphEdge[]> {
+  if (config.related.embeddingK <= 0) return []
+  const ids = nodeList.map((n) => n.id)
+  const cached = getEmbeddings(ids)
+  const missing = ids.filter((id) => !cached.has(id)).slice(0, config.related.embeddingBatch)
+  if (missing.length) {
+    const fetched = await getEmbeddingsBatch(missing)
+    for (const [id, vector] of fetched) {
+      upsertEmbedding(id, 'specter_v2', vector)
+      cached.set(id, vector)
+    }
+  }
+  const vectors = new Map<string, number[]>()
+  for (const id of ids) {
+    const vector = cached.get(id)
+    if (vector) vectors.set(id, vector)
+  }
+  if (vectors.size < 2) return []
+  const edges = semanticNeighborEdges(vectors, {
+    k: config.related.embeddingK,
+    minSim: config.related.embeddingMinSim,
+  })
+  return edges.map((e) => ({
+    from: e.from,
+    to: e.to,
+    type: 'semantic' as const,
+    weight: Number(e.sim.toFixed(3)),
+  }))
+}
+
+async function safeRecommendationIds(s2Path: string): Promise<string[]> {  try {
     const rec = await getRecommendations(s2Path)
     return (rec?.recommendedPapers ?? [])
       .map((r: { paperId?: string }) => r?.paperId)
@@ -316,8 +353,8 @@ async function addRelatedNodes(
   try {
     const doi = normalizeDoi(root.externalIds?.DOI)
     const budget = Math.max(0, Math.min(config.related.relatedNodeBudget, maxNodes - nodes.size))
-    if (doi && budget > 0) {
-      const works = await getRelatedWorksByDoi(doi, config.related.openalexLimit)
+    if (budget > 0 && (doi || root.title)) {
+      const works = await getRelatedWorksForPaper({ doi, title: root.title, limit: config.related.openalexLimit })
       works.slice(0, budget).forEach((w, i) => {
         const id = normalizeDoi(w?.doi) ?? String(w?.id ?? '')
         if (!id || nodes.has(id)) return

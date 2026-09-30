@@ -15,7 +15,7 @@ export const config = {
   cache: {
     networkTtlHours: num(Bun.env.NETWORK_TTL_HOURS, 24),
     paperTtlHours: num(Bun.env.PAPER_TTL_HOURS, 168),
-    graphVersion: 4,
+    graphVersion: 5,
   },
   s2: {
     base: 'https://api.semanticscholar.org/graph/v1',
@@ -28,6 +28,9 @@ export const config = {
     relatedNodeBudget: num(Bun.env.RELATED_NODE_BUDGET, 15),
     couplingMin: num(Bun.env.COUPLING_MIN, 2),
     openalexLimit: num(Bun.env.OPENALEX_RELATED_LIMIT, 10),
+    embeddingBatch: num(Bun.env.EMBEDDING_BATCH, 100),
+    embeddingK: num(Bun.env.EMBEDDING_K, 5),
+    embeddingMinSim: num(Bun.env.EMBEDDING_MIN_SIM, 0.8),
   },
   arxiv: { base: 'http://export.arxiv.org/api' },
   server: { port: env.port, hostname: env.hostname },
