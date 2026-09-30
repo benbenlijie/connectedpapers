@@ -19,7 +19,7 @@ export interface OpencodeClient {
   eventStream(): Promise<Response>
 }
 
-export function createOpencodeClient(baseUrl: string): OpencodeClient {
+export function createOpencodeClient(baseUrl: string, timeoutMs = 120000): OpencodeClient {
   const root = baseUrl.replace(/\/+$/, '')
   return {
     async createSession(title) {
@@ -27,6 +27,7 @@ export function createOpencodeClient(baseUrl: string): OpencodeClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) throw new Error(`opencode createSession ${res.status}`)
       const body = (await res.json()) as { id: string }
@@ -41,16 +42,22 @@ export function createOpencodeClient(baseUrl: string): OpencodeClient {
           model: { providerID, modelID },
           parts: [{ type: 'text', text }],
         }),
+        signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) throw new Error(`opencode promptAsync ${res.status}`)
     },
     async messages(sessionId) {
-      const res = await fetch(`${root}/session/${sessionId}/message`)
+      const res = await fetch(`${root}/session/${sessionId}/message`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      })
       if (!res.ok) throw new Error(`opencode messages ${res.status}`)
       return (await res.json()) as unknown[]
     },
     async abort(sessionId) {
-      const res = await fetch(`${root}/session/${sessionId}/abort`, { method: 'POST' })
+      const res = await fetch(`${root}/session/${sessionId}/abort`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(timeoutMs),
+      })
       if (!res.ok) throw new Error(`opencode abort ${res.status}`)
     },
     async eventStream() {
@@ -68,6 +75,7 @@ export interface OpencodeManagerOptions {
 export class OpencodeManager {
   private proc: ReturnType<typeof Bun.spawn> | null = null
   private ready = false
+  private ownsDir = false
 
   constructor(private opts: OpencodeManagerOptions) {}
 
@@ -86,6 +94,7 @@ export class OpencodeManager {
 
     const toolsDir = join(this.opts.runtimeDir, '.opencode', 'tools')
     mkdirSync(toolsDir, { recursive: true })
+    this.ownsDir = true
     writeFileSync(join(this.opts.runtimeDir, 'opencode.json'), buildOpencodeConfig(provider, config.ai.maxSteps), {
       mode: 0o600,
     })
@@ -146,6 +155,9 @@ export class OpencodeManager {
       this.proc.kill()
       this.proc = null
     }
-    rmSync(this.opts.runtimeDir, { recursive: true, force: true })
+    if (this.ownsDir) {
+      rmSync(this.opts.runtimeDir, { recursive: true, force: true })
+      this.ownsDir = false
+    }
   }
 }
