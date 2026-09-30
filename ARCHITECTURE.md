@@ -292,14 +292,23 @@ the page falls back to arXiv abs/PDF links when no HTML build exists.
 `lib/readerBlocks.ts` collects text-bearing blocks from the reader's
 `contentDocument` (skipping nested, numeric-only, already-CJK, and already-
 translated nodes) and inserts a `data-cn-translation` block after each source
-block (inside table cells). `lib/translator.ts` orchestrates providers: it serves
-an in-memory `target\ntext` cache, then walks `/api/llm/status` order — `browser`
-entries use the built-in `Translator` API locally, `openai` entries post
-`/api/translate` — advancing on failure and throwing only when all fail. The
-reader runs translations in batches of 15 with a cancel flag, shows
-`done/total` progress, re-runs on target change, and disables the toggle when no
-provider is configured. A one-time click listener toggles individual
-translations.
+block (inside table cells). `blockSourceText` reads a cleaned clone (drops
+MathML `<annotation>` so formulas are not duplicated, drops inserted translation
+nodes). `lib/translator.ts` orchestrates providers: it serves a persisted
+`target\ntext` cache (`localStorage`, LRU-bounded, written through with a
+debounce), then walks `/api/llm/status` order (polled once) — `browser` entries
+use the built-in `Translator` API locally, `openai` entries post
+`/api/translate` — advancing on failure and throwing only when all fail.
+
+Translation is **lazy**: `lib/translationQueue.ts` hands out queued block
+indices in document order, and the reader enqueues only blocks within two
+viewports of the visible area (`getBoundingClientRect` scan on a rAF-throttled
+`scroll` listener, since an IntersectionObserver rooted at the parent frame does
+not track in-iframe scrolling). A pump drains the queue in batches of 4 with a
+cancel flag and per-document/session guards, showing `done/total` progress.
+On load, all cached translations are restored instantly (no network); a partial
+restore leaves the toggle on "翻译" so the user can fill the rest lazily.
+Clicking a translation toggles it; the toggle is disabled with no provider.
 
 ### 13. AI assistant as an opencode agent
 

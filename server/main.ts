@@ -26,6 +26,12 @@ const rateLimiter =
     ? createRateLimiter({ windowMs: 60_000, max: config.server.rateLimitPerMin })
     : null
 
+// The reader's translation flow is chatty by design: one small /api/translate
+// request per block batch plus a provider-status poll, scaling with document
+// size. Exempting these keeps a large paper from tripping the generic per-IP
+// limiter; the provider and per-request size caps still bound the work.
+const RATE_LIMIT_EXEMPT = ['/api/paper/session/', '/api/translate', '/api/llm/status']
+
 function unauthorized(): Response {
   const body = `<!doctype html><meta charset="utf-8"><title>需要访问口令</title>
 <body style="font-family:system-ui;background:#111827;color:#e5e7eb;padding:3rem">
@@ -128,7 +134,7 @@ server = Bun.serve({
         if (!token || !safeEqual(token, ACCESS_TOKEN)) return unauthorized()
       }
 
-      if (rateLimiter && p.startsWith('/api/') && !p.startsWith('/api/paper/session/')) {
+      if (rateLimiter && p.startsWith('/api/') && !RATE_LIMIT_EXEMPT.some((prefix) => p.startsWith(prefix))) {
         const ip = clientIpFrom(req.headers, config.server.trustProxy, safeRequestIp(req))
         if (!rateLimiter(ip)) {
           throw new ApiError('RATE_LIMITED', '请求过于频繁，请稍后重试', 429)

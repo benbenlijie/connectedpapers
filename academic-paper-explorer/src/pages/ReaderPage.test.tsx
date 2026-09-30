@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ReaderPage from './ReaderPage'
 import { useReadingStore } from '../store/useReadingStore'
+import { clearProviderCache } from '../lib/translator'
 
 const ARTICLE = `<!DOCTYPE html><html><head><title>Paper</title></head><body>
   <h1 id="S1">Introduction</h1>
@@ -26,6 +27,7 @@ let mockProviders: { name: string; kind: string }[] = []
 
 beforeEach(() => {
   localStorage.clear()
+  clearProviderCache()
   useReadingStore.setState({ entries: {} })
   mockProviders = []
   globalThis.fetch = vi.fn(async (url: unknown) => {

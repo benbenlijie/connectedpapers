@@ -33,6 +33,49 @@ export function markBlock(el: Element, id: string): void {
   el.setAttribute(SOURCE_ATTR, id)
 }
 
+/**
+ * Plain text to send to the translator for a block. Reads a clone so that
+ * - the MathML `<annotation>` (raw LaTeX) is dropped: `textContent` would
+ *   otherwise emit the visible glyphs *and* the LaTeX, duplicating formulas
+ *   (e.g. `x1x_{1}`);
+ * - inserted translation nodes are ignored, so a placeholder appended inside a
+ *   table cell is never mistaken for source text (which previously leaked the
+ *   literal "翻译中…" into the finished translation).
+ */
+export function blockSourceText(el: Element): string {
+  const clone = el.cloneNode(true) as Element
+  clone
+    .querySelectorAll(`annotation, script, style, [${TRANSLATION_ATTR}]`)
+    .forEach((node) => node.remove())
+  return (clone.textContent ?? '').trim()
+}
+
+/**
+ * Insert finished translations for blocks whose source text is already cached,
+ * so a page reload restores prior output without re-translating. Returns the
+ * number restored; blocks without a hit are left untouched (no placeholder).
+ */
+export function restoreCachedTranslations(
+  doc: Document,
+  blocks: Element[],
+  lookup: (text: string) => string | undefined,
+): number {
+  let restored = 0
+  blocks.forEach((el, i) => {
+    const translated = lookup(blockSourceText(el))
+    if (!translated) return
+    const id = String(i)
+    markBlock(el, id)
+    if (doc.querySelector(`[${TRANSLATION_FOR_ATTR}="${id}"]`)) {
+      updateTranslation(doc, id, translated)
+    } else {
+      insertTranslation(doc, el, id, translated)
+    }
+    restored += 1
+  })
+  return restored
+}
+
 export function insertTranslation(doc: Document, block: Element, id: string, text: string): Element {
   const node = doc.createElement('div')
   node.setAttribute(TRANSLATION_ATTR, '')
