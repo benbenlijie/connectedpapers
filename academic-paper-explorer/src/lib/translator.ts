@@ -1,4 +1,4 @@
-const API = '/api'
+import { API_BASE } from './apiBase'
 
 export interface PublicProvider {
   name: string
@@ -35,7 +35,7 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 export async function fetchProviders(): Promise<PublicProvider[]> {
-  const res = await fetch(`${API}/llm/status`)
+  const res = await fetch(`${API_BASE}/llm/status`)
   if (!res.ok) throw new Error(`加载翻译 provider 失败: ${res.status}`)
   const body = await res.json()
   return (body?.data?.providers ?? []) as PublicProvider[]
@@ -97,7 +97,7 @@ export async function translateViaServer(
   target: string,
   provider: string,
 ): Promise<string[]> {
-  const res = await fetch(`${API}/translate`, {
+  const res = await fetch(`${API_BASE}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, texts, target }),

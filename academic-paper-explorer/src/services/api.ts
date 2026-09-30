@@ -2,8 +2,7 @@ import {
   searchResponseSchema, networkDataSchema, jobStatusSchema, detailsResponseSchema,
 } from './schemas'
 import type { NetworkData, Paper, PaperDetails } from '../types/domain'
-
-const API = '/api'
+import { API_BASE } from '../lib/apiBase'
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) { super(message) }
@@ -20,7 +19,7 @@ const MESSAGES: Record<string, string> = {
 }
 
 async function request(path: string, body?: unknown): Promise<any> {
-  const res = await fetch(API + path, {
+  const res = await fetch(API_BASE + path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),

@@ -1,3 +1,4 @@
+import { API_BASE } from './apiBase'
 import { fetchProviders, type PublicProvider } from './translator'
 
 export type AiAction = 'explain' | 'summarize' | 'ask'
@@ -24,7 +25,7 @@ export async function askViaServer(
   input: AiInput,
   target: string,
 ): Promise<string> {
-  const res = await fetch('/api/ai', {
+  const res = await fetch(`${API_BASE}/ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, action, target, ...input }),

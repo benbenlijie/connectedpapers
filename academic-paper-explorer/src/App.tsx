@@ -7,6 +7,9 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 
 const ReaderPage = React.lazy(() => import('./pages/ReaderPage'))
 
+// Follow the build base so routing works both at "/" and under a sub-path mount.
+const basename = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') || '/'
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -21,7 +24,7 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <Router>
+        <Router basename={basename}>
           <div className="min-h-screen bg-gray-900 text-white">
             <Routes>
               <Route path="/" element={<HomePage />} />
