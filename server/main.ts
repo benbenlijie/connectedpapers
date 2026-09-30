@@ -54,14 +54,36 @@ async function serveStatic(pathname: string): Promise<Response> {
 
 recoverJobs()
 
-const opencodeManager = config.ai.enabled
-  ? new OpencodeManager({
-      runtimeDir: join(import.meta.dir, '../data/opencode-runtime'),
-      baseUrl: `http://127.0.0.1:${config.ai.port}`,
-      port: config.ai.port,
-    })
-  : null
-const opencodeClient = createOpencodeClient(`http://127.0.0.1:${config.ai.port}`)
+const externalBase = config.ai.externalBaseUrl
+const opencodeBase = externalBase || `http://127.0.0.1:${config.ai.port}`
+// External mode: opencode runs elsewhere (e.g. a developer machine over a
+// reverse SSH tunnel); don't spawn or own a local process.
+const opencodeManager =
+  config.ai.enabled && !externalBase
+    ? new OpencodeManager({
+        runtimeDir: join(import.meta.dir, '../data/opencode-runtime'),
+        baseUrl: opencodeBase,
+        port: config.ai.port,
+      })
+    : null
+const opencodeClient = createOpencodeClient(opencodeBase)
+
+let aiHealthAt = 0
+let aiHealthy = false
+async function aiAvailable(): Promise<boolean> {
+  if (!config.ai.enabled) return false
+  if (opencodeManager) return opencodeManager.isHealthy()
+  const now = Date.now()
+  if (now - aiHealthAt < 5000) return aiHealthy
+  aiHealthAt = now
+  try {
+    const res = await fetch(`${opencodeBase}/global/health`, { signal: AbortSignal.timeout(2500) })
+    aiHealthy = res.ok
+  } catch {
+    aiHealthy = false
+  }
+  return aiHealthy
+}
 
 if (opencodeManager) {
   opencodeManager.start().catch((e) => console.error('[opencode] failed to start:', e))
@@ -113,7 +135,7 @@ server = Bun.serve({
         }
       }
 
-      if (p.startsWith('/api/ai/') && !opencodeManager?.isHealthy()) {
+      if (p.startsWith('/api/ai/') && !(await aiAvailable())) {
         throw new ApiError('LLM_UNAVAILABLE', 'AI 服务不可用，请稍后重试', 503)
       }
 

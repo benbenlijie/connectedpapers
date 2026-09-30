@@ -3,6 +3,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "server": "bun --env-file=server/.env run server/main.ts",
+    "opencode:local": "bun --env-file=server/.env run scripts/opencode-local.ts",
     "test:server": "bun test server/",
     "typecheck:server": "bunx tsc --noEmit -p server/tsconfig.json",
     "dev:web": "pnpm --dir academic-paper-explorer dev",
