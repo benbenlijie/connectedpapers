@@ -17,6 +17,9 @@ export async function aiSessionRoute(req: Request, db: Database, client: Opencod
   const arxivId = body.arxivId?.trim()
   if (!arxivId) throw new ApiError('VALIDATION_FAILED', 'arxivId 不能为空')
   let sessionId = getSession(arxivId, db)
+  // The stored mapping can point at a session that no longer exists (e.g. after
+  // an opencode restart); validate and recreate so a paper never gets stuck.
+  if (sessionId && !(await client.sessionExists(sessionId))) sessionId = null
   if (!sessionId) {
     sessionId = await client.createSession(`paper:${arxivId}`)
     setSession(arxivId, sessionId, db)
