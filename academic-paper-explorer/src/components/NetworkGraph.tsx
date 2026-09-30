@@ -11,7 +11,7 @@ import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } 
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
 
 import { EDGE_COLORS, withAlpha } from '../graph/encoding'
-import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename } from '../graph/exportGraph'
+import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename, toBibtex, toCsv } from '../graph/exportGraph'
 import {
   applyPositions,
   collectPositions,
@@ -206,6 +206,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     const payload = buildExportPayload(networkData.nodes, networkData.edges, { scope: 'full', rootTitle })
     downloadText(exportFilename(rootTitle, 'json'), JSON.stringify(payload, null, 2), 'application/json')
   }, [networkData, rootTitle])
+
+  const handleExportBibtex = useCallback(() => {
+    downloadText(exportFilename(rootTitle, 'bib'), toBibtex(filteredNodes), 'application/x-bibtex')
+  }, [filteredNodes, rootTitle])
+
+  const handleExportCsv = useCallback(() => {
+    downloadText(exportFilename(rootTitle, 'csv'), toCsv(filteredNodes), 'text/csv')
+  }, [filteredNodes, rootTitle])
 
   const activeId = hoverNode?.id ?? activeSelectionId ?? null
 
@@ -618,6 +626,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
         onExportPng={handleExportPng}
         onExportJsonVisible={handleExportJsonVisible}
         onExportJsonFull={handleExportJsonFull}
+        onExportBibtex={handleExportBibtex}
+        onExportCsv={handleExportCsv}
       />
       {!isCompare && <GraphLegend nodes={graphData.nodes} />}
       {!isCompare && <GraphTimeline minYear={minYear} maxYear={maxYear} />}

@@ -8,6 +8,8 @@ interface GraphToolbarProps {
   onExportPng?: () => void
   onExportJsonVisible?: () => void
   onExportJsonFull?: () => void
+  onExportBibtex?: () => void
+  onExportCsv?: () => void
 }
 
 const COLOR_MODES: { value: ColorMode; label: string }[] = [
@@ -26,6 +28,8 @@ const GraphToolbar: React.FC<GraphToolbarProps> = ({
   onExportPng,
   onExportJsonVisible,
   onExportJsonFull,
+  onExportBibtex,
+  onExportCsv,
 }) => {
   const { graphView, setGraphView, colorMode, setColorMode, sizeMode, setSizeMode, graphQuery, setGraphQuery } =
     useUiStore()
@@ -126,6 +130,20 @@ const GraphToolbar: React.FC<GraphToolbarProps> = ({
               className="px-3 py-1.5 text-left hover:bg-gray-700"
             >
               JSON（完整网络）
+            </button>
+            <button
+              type="button"
+              onClick={() => runExport(onExportBibtex)}
+              className="px-3 py-1.5 text-left hover:bg-gray-700"
+            >
+              BibTeX（当前视图）
+            </button>
+            <button
+              type="button"
+              onClick={() => runExport(onExportCsv)}
+              className="px-3 py-1.5 text-left hover:bg-gray-700"
+            >
+              CSV（当前视图）
             </button>
           </div>
         )}

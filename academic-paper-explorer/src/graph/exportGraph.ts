@@ -45,8 +45,7 @@ export function buildExportPayload(
   nodes: NetworkNode[],
   edges: NetworkEdge[],
   opts: ExportOptions,
-): ExportPayload {
-  return {
+): ExportPayload {  return {
     meta: {
       generator: GENERATOR,
       scope: opts.scope,
@@ -58,6 +57,42 @@ export function buildExportPayload(
     nodes,
     edges,
   }
+}
+
+function bibtexKey(node: NetworkNode): string {
+  const first = (node.authors || 'anon').split(',')[0].trim().split(/\s+/).pop() || 'anon'
+  return `${first}${node.year ?? ''}${node.id}`.replace(/[^A-Za-z0-9:_-]/g, '')
+}
+
+/** BibTeX entries for the given nodes. */
+export function toBibtex(nodes: NetworkNode[]): string {
+  return (
+    nodes
+      .map((node) => {
+        const fields: string[] = []
+        if (node.title) fields.push(`  title = {${node.title}}`)
+        if (node.authors) fields.push(`  author = {${node.authors}}`)
+        if (node.year) fields.push(`  year = {${node.year}}`)
+        if (node.venue) fields.push(`  journal = {${node.venue}}`)
+        if (node.url) fields.push(`  url = {${node.url}}`)
+        return `@article{${bibtexKey(node)},\n${fields.join(',\n')}\n}`
+      })
+      .join('\n\n') + '\n'
+  )
+}
+
+function csvCell(value: unknown): string {
+  const s = String(value ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+/** CSV (one row per node) for the given nodes. */
+export function toCsv(nodes: NetworkNode[]): string {
+  const header = ['id', 'title', 'authors', 'year', 'venue', 'citation_count', 'url']
+  const rows = nodes.map((n) =>
+    [n.id, n.title, n.authors, n.year, n.venue, n.citationCount, n.url].map(csvCell).join(','),
+  )
+  return [header.join(','), ...rows].join('\n') + '\n'
 }
 
 function triggerDownload(filename: string, href: string): void {

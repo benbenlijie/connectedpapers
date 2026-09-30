@@ -22,4 +22,17 @@ describe('GraphToolbar export menu', () => {
     expect(visible).toHaveBeenCalledOnce()
     expect(full).toHaveBeenCalledOnce()
   })
+
+  it('invokes the BibTeX and CSV handlers', () => {
+    const bib = vi.fn()
+    const csv = vi.fn()
+    render(<GraphToolbar onExportBibtex={bib} onExportCsv={csv} />)
+    const open = () => fireEvent.click(screen.getByRole('button', { name: /导出/ }))
+    open()
+    fireEvent.click(screen.getByText('BibTeX（当前视图）'))
+    open()
+    fireEvent.click(screen.getByText('CSV（当前视图）'))
+    expect(bib).toHaveBeenCalledOnce()
+    expect(csv).toHaveBeenCalledOnce()
+  })
 })
