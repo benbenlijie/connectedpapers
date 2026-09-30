@@ -126,3 +126,27 @@ create table if not exists paper_embeddings (
   vector     text not null,
   updated_at text not null default (datetime('now'))
 );
+
+create table if not exists paper_content (
+  arxiv_id   text primary key,
+  title      text not null default '',
+  source     text not null default 'html',
+  fetched_at text not null default (datetime('now')),
+  expires_at text not null
+);
+
+create table if not exists paper_sections (
+  arxiv_id text not null references paper_content(arxiv_id) on delete cascade,
+  idx      integer not null,
+  heading  text not null default '',
+  text     text not null default '',
+  primary key (arxiv_id, idx)
+);
+
+create table if not exists ai_sessions (
+  arxiv_id   text primary key,
+  session_id text not null,
+  created_at text not null default (datetime('now')),
+  updated_at text not null default (datetime('now'))
+);
+create unique index if not exists ai_sessions_session_idx on ai_sessions(session_id);
