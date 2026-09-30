@@ -449,6 +449,14 @@ visibility. `NetworkGraph` drops hidden types right after `filterGraph`, and
 through + dimmed when hidden) so the legend doubles as a filter. Hidden types are
 session-only (not in the URL).
 
+### 28. Timeline clarity
+
+`GraphTimeline` now states its meaning directly: a "时间轴" title, a status badge
+（`全部年份` or `≤ YYYY 年`）, the min/max year at the slider ends, and the hint
+"仅显示该年份及更早发表的论文". Playback starts from the earliest year when idle
+(`togglePlay`), so pressing play always has somewhere to go, and a "全部" button
+clears the filter (replacing the bare ✕).
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
