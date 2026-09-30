@@ -74,6 +74,9 @@ let server: ReturnType<typeof Bun.serve>
 server = Bun.serve({
   port: config.server.port,
   hostname: config.server.hostname,
+  // SSE (/api/ai/stream) is long-lived; the 10s default idle timeout
+  // silently kills it mid-turn.
+  idleTimeout: 120,
   async fetch(req) {
     const url = new URL(req.url)
     const p = url.pathname
