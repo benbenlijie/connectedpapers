@@ -23,7 +23,11 @@ function loadSessions(): Record<string, string> {
   try {
     const parsed = JSON.parse(localStorage.getItem(AI_CHAT_STORAGE_KEY) ?? '{}')
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, string>
+      const sessions: Record<string, string> = {}
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === 'string') sessions[key] = value
+      }
+      return sessions
     }
     return {}
   } catch {

@@ -26,7 +26,7 @@ export function normalizeOpencodeEvent(sessionId: string, event: RawEvent): AiCl
   const props = event.properties ?? {}
   const evSession = props.sessionID ?? props.part?.sessionID
   if (event.type === 'session.idle') {
-    return { type: 'done' }
+    return evSession !== undefined && evSession !== sessionId ? null : { type: 'done' }
   }
   if (event.type === 'session.error') {
     if (evSession !== undefined && evSession !== sessionId) return null

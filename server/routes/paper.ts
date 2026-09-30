@@ -13,6 +13,14 @@ function checkToken(req: Request, expected?: string): void {
   }
 }
 
+async function loadContentOr404(arxivId: string, db: Database) {
+  try {
+    return await loadPaperContent(arxivId, fetch, db, undefined, config.ai.contentTtlHours)
+  } catch {
+    throw new ApiError('PAPER_NOT_FOUND', `could not load paper ${arxivId}`, 404)
+  }
+}
+
 export async function paperSearchRoute(
   req: Request,
   db: Database,
@@ -26,7 +34,7 @@ export async function paperSearchRoute(
     const arxivId = getArxivBySession(sessionId, db)
     if (!arxivId) throw new ApiError('PAPER_NOT_FOUND', `unknown session ${sessionId}`, 404)
     let content = getCachedContent(arxivId, db)
-    if (!content) content = await loadPaperContent(arxivId, fetch, db, undefined, config.ai.contentTtlHours)
+    if (!content) content = await loadContentOr404(arxivId, db)
     const hits = rankSections(content.sections, q, 8)
     return json({ data: { arxivId, title: content.title, hits } })
   } catch (e) {
@@ -46,7 +54,7 @@ export async function paperSectionRoute(
     const arxivId = getArxivBySession(sessionId, db)
     if (!arxivId) throw new ApiError('PAPER_NOT_FOUND', `unknown session ${sessionId}`, 404)
     let content = getCachedContent(arxivId, db)
-    if (!content) content = await loadPaperContent(arxivId, fetch, db, undefined, config.ai.contentTtlHours)
+    if (!content) content = await loadContentOr404(arxivId, db)
     const section = content.sections.find((s) => s.idx === idx)
     if (!section) throw new ApiError('PAPER_NOT_FOUND', `no section ${idx}`, 404)
     return json({ data: { arxivId, section } })

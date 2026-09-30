@@ -78,6 +78,7 @@ export class OpencodeManager {
   private ownsDir = false
   private stopped = false
   private restartAttempt = 0
+  private startedAt: number | null = null
 
   constructor(private opts: OpencodeManagerOptions) {}
 
@@ -136,7 +137,7 @@ export class OpencodeManager {
     while (Date.now() < deadline) {
       if (await this.ping()) {
         this.ready = true
-        this.restartAttempt = 0
+        this.startedAt = Date.now()
         void proc.exited.then(() => this.onExit())
         return
       }
@@ -148,19 +149,24 @@ export class OpencodeManager {
   }
 
   private onExit(): void {
+    const uptime = this.startedAt ? Date.now() - this.startedAt : 0
     this.ready = false
     if (this.stopped || !this.proc) return
+    if (uptime > 30_000) this.restartAttempt = 0
+    void this.scheduleRestart()
+  }
+
+  private async scheduleRestart(): Promise<void> {
     const attempt = this.restartAttempt++
     const delay = Math.min(30_000, 500 * 2 ** attempt)
-    void (async () => {
-      await Bun.sleep(delay)
-      if (this.stopped) return
-      try {
-        await this.start()
-      } catch (e) {
-        console.error('[opencode] restart failed:', e)
-      }
-    })()
+    await Bun.sleep(delay)
+    if (this.stopped) return
+    try {
+      await this.start()
+    } catch (e) {
+      console.error('[opencode] restart failed:', e)
+      if (!this.stopped) void this.scheduleRestart()
+    }
   }
 
   private async ping(): Promise<boolean> {
@@ -175,6 +181,7 @@ export class OpencodeManager {
   async stop(): Promise<void> {
     this.stopped = true
     this.ready = false
+    this.startedAt = null
     if (this.proc) {
       this.proc.kill()
       this.proc = null
