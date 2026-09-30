@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import AiAssistantPanel from './AiAssistantPanel'
 
 vi.mock('../lib/aiAgent', () => ({
@@ -21,6 +21,23 @@ describe('AiAssistantPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     await waitFor(() => expect(sendMessage).toHaveBeenCalled())
     expect((sendMessage as any).mock.calls[0][0]).toMatchObject({ sessionId: 's1', message: 'loss?', target: 'zh' })
+  })
+
+  it('reconciles the transcript from history when the turn completes', async () => {
+    const { streamEvents, fetchHistory } = await import('../lib/aiAgent')
+    let onEvent: ((e: unknown) => void) | null = null
+    ;(streamEvents as any).mockImplementation((_id: string, cb: (e: unknown) => void) => {
+      onEvent = cb
+      return () => {}
+    })
+    render(<AiAssistantPanel arxivId="2401.00002" selection="" target="zh" onClose={() => {}} />)
+    await waitFor(() => expect(fetchHistory).toHaveBeenCalled())
+    fireEvent.change(screen.getByPlaceholderText('就论文提问…'), { target: { value: 'q' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(streamEvents).toHaveBeenCalled())
+    const before = (fetchHistory as any).mock.calls.length
+    act(() => onEvent!({ type: 'done' }))
+    await waitFor(() => expect((fetchHistory as any).mock.calls.length).toBeGreaterThan(before))
   })
 
   it('shows an error when session bootstrap fails', async () => {

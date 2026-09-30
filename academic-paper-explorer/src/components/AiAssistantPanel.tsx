@@ -59,7 +59,14 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
       unsubRef.current?.()
       unsubRef.current = streamEvents(
         id,
-        (event) => applyEvent(arxivId, event),
+        (event) => {
+          applyEvent(arxivId, event)
+          if (event.type === 'done') {
+            unsubRef.current?.()
+            unsubRef.current = null
+            void reloadHistory(id)
+          }
+        },
         (e) => {
           setError(e instanceof Error ? e.message : '事件流断开')
           void reloadHistory(id)
