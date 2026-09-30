@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, FileText, Loader2, Languages, Sparkles, Send } from 'lucide-react'
+import { ArrowLeft, ExternalLink, FileText, Loader2, Languages, Sparkles } from 'lucide-react'
 import {
   arxivAbsUrl,
   arxivHtmlUrl,
@@ -10,7 +10,7 @@ import {
   type OutlineItem,
 } from '../lib/article'
 import { fetchProviders, prepareBrowserTranslator, translate, chunk, type PublicProvider } from '../lib/translator'
-import { askAi, type AiAction } from '../lib/ai'
+import AiAssistantPanel from '../components/AiAssistantPanel'
 import { useReadingStore } from '../store/useReadingStore'
 import { READING_STATUSES, type ReadingStatus } from '../lib/reading'
 import { useHighlightsStore } from '../store/useHighlightsStore'
@@ -70,10 +70,6 @@ const ReaderPage: React.FC = () => {
 
   const [aiOpen, setAiOpen] = useState(false)
   const [selection, setSelection] = useState('')
-  const [question, setQuestion] = useState('')
-  const [answer, setAnswer] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
 
   const blocksRef = useRef<Element[]>([])
   const [pendingAnchor, setPendingAnchor] = useState<HighlightAnchor | null>(null)
@@ -311,28 +307,6 @@ const ReaderPage: React.FC = () => {
   )
 
   const aiEnabled = providers.some((p) => p.kind === 'openai')
-
-  const runAi = useCallback(
-    async (action: AiAction) => {
-      if (action === 'ask' ? !question.trim() : !selection) return
-      setAiLoading(true)
-      setAiError(null)
-      setAnswer('')
-      try {
-        const out = await askAi(
-          action,
-          { text: selection, question: action === 'ask' ? question : undefined },
-          target,
-        )
-        setAnswer(out.answer)
-      } catch (e) {
-        setAiError(e instanceof Error ? e.message : 'AI 请求失败')
-      } finally {
-        setAiLoading(false)
-      }
-    },
-    [selection, question, target],
-  )
 
   useEffect(() => () => {
     cancelRef.current = true
@@ -577,72 +551,12 @@ const ReaderPage: React.FC = () => {
         </main>
 
         {aiOpen && (
-          <aside className="flex w-80 flex-shrink-0 flex-col border-l border-gray-700 bg-gray-800">
-            <div className="flex items-center justify-between border-b border-gray-700 px-3 py-2">
-              <span className="text-sm font-medium">AI 助手</span>
-              <button
-                type="button"
-                aria-label="关闭 AI"
-                onClick={() => setAiOpen(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
-              <div>
-                <div className="mb-1 text-xs text-gray-400">选中文本</div>
-                <div className="max-h-32 overflow-y-auto rounded bg-gray-900 p-2 text-xs text-gray-300">
-                  {selection || '在正文中选中一段文本后可用'}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => runAi('explain')}
-                  disabled={!selection || aiLoading}
-                  className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600 disabled:opacity-50"
-                >
-                  解释
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runAi('summarize')}
-                  disabled={!selection || aiLoading}
-                  className="rounded bg-gray-700 px-3 py-1 text-xs hover:bg-gray-600 disabled:opacity-50"
-                >
-                  总结
-                </button>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="就选中内容提问…"
-                  className="flex-1 rounded bg-gray-900 px-2 py-1 text-xs outline-none placeholder:text-gray-500"
-                />
-                <button
-                  type="button"
-                  aria-label="提问"
-                  onClick={() => runAi('ask')}
-                  disabled={!question.trim() || aiLoading}
-                  className="rounded bg-indigo-600 px-2 py-1 text-white hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  <Send className="h-3 w-3" />
-                </button>
-              </div>
-              {aiError && <div className="text-xs text-red-400">{aiError}</div>}
-              <div>
-                <div className="mb-1 flex items-center gap-2 text-xs text-gray-400">
-                  <Sparkles className="h-3 w-3" /> 回答
-                  {aiLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-                </div>
-                <div className="whitespace-pre-wrap rounded bg-gray-900 p-2 text-xs leading-relaxed text-gray-200">
-                  {answer || (aiLoading ? '思考中…' : '')}
-                </div>
-              </div>
-            </div>
-          </aside>
+          <AiAssistantPanel
+            arxivId={arxivId ?? readingKey}
+            selection={selection}
+            target={target}
+            onClose={() => setAiOpen(false)}
+          />
         )}
       </div>
     </div>
