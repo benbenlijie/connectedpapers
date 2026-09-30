@@ -417,6 +417,17 @@ now reflects real communities. When the graph is coloured by cluster,
 `NetworkGraph` fades edges that cross communities so they read as inter-cluster
 links. `graphVersion`/`NETWORK_GRAPH_VERSION` bumped to 6.
 
+### 25. Upstream rate limiting and keys
+
+All Semantic Scholar and OpenAlex calls go through per-source limiters
+(`rateLimit.ts:createLimiter`) that serialize requests with a minimum spacing —
+`config.s2.minIntervalMs` (1000ms without a key, 100ms with one) and
+`config.openalex.minIntervalMs` (200ms). Failures never break the chain, so
+retries stay spaced. OpenAlex requests append `api_key` when `OPENALEX_API_KEY`
+is set (alongside the existing polite-pool `mailto`), and S2 already sends
+`x-api-key`. This keeps fan-out crawls under the shared rate limits instead of
+bursting into 429s.
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to

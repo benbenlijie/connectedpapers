@@ -79,6 +79,7 @@ PORT=8787
 ```
 
 - `SEMANTIC_SCHOLAR_API_KEY` 可选，配置后可获得更稳定的 Semantic Scholar 速率限制。
+- `OPENALEX_API_KEY` 可选，配置后摆脱 OpenAlex 匿名限流。所有上游请求按来源限速（`S2_MIN_INTERVAL_MS` / `OPENALEX_MIN_INTERVAL_MS` 可调）。
 - 默认只监听回环地址 `127.0.0.1`；如需修改端口可使用 `PORT=9000 bun run server`。
 
 ### LLM / 翻译 provider（可选）

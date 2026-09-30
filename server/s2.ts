@@ -1,5 +1,13 @@
 import { config } from './config'
 import { withRetry } from './retry'
+import { createLimiter } from './rateLimit'
+
+const limiter = createLimiter(config.s2.minIntervalMs)
+
+/** Rate-limited Semantic Scholar fetch (1 req/s shared, faster with a key). */
+function s2Fetch(url: string, init?: RequestInit): Promise<Response> {
+  return limiter(() => fetch(url, init))
+}
 
 const FIELDS =
   'paperId,title,abstract,year,citationCount,authors,venue,url,openAccessPdf,fieldsOfStudy,externalIds,' +
@@ -31,7 +39,7 @@ function headers(): Record<string, string> {
 }
 
 async function getJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(15000) })
+  const res = await s2Fetch(url, { headers: headers(), signal: AbortSignal.timeout(15000) })
   if (!res.ok) throw Object.assign(new Error(`S2 ${res.status} ${res.statusText}`), { status: res.status })
   return res.json()
 }
@@ -47,7 +55,7 @@ const SEARCH_FIELDS =
 /** 关键词搜索。对 429/5xx 退避重试；重试耗尽后抛出（携带 status）。 */
 export function searchPapers(query: string): Promise<S2Paper[]> {
   return withRetry(async () => {
-    const res = await fetch(
+    const res = await s2Fetch(
       `${config.s2.base}/paper/search?query=${encodeURIComponent(query)}&limit=20&fields=${SEARCH_FIELDS}`,
       { headers: headers(), signal: AbortSignal.timeout(15000) },
     )
@@ -59,7 +67,7 @@ export function searchPapers(query: string): Promise<S2Paper[]> {
 /** 一次最多 500 个 id，返回与入参同序的数组（缺失为 null）。 */
 export function getPapersBatch(s2Paths: string[]): Promise<(S2Paper | null)[]> {
   return withRetry(async () => {
-    const res = await fetch(`${config.s2.base}/paper/batch?fields=${FIELDS}`, {
+    const res = await s2Fetch(`${config.s2.base}/paper/batch?fields=${FIELDS}`, {
       method: 'POST',
       headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: s2Paths }),
@@ -83,7 +91,7 @@ export function getCitationContexts(s2Path: string): Promise<any> {
 export async function getEmbeddingsBatch(s2Paths: string[]): Promise<Map<string, number[]>> {
   const out = new Map<string, number[]>()
   if (!s2Paths.length) return out
-  const res = await fetch(`${config.s2.base}/paper/batch?fields=embedding.specter_v2`, {
+  const res = await s2Fetch(`${config.s2.base}/paper/batch?fields=embedding.specter_v2`, {
     method: 'POST',
     headers: { ...headers(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids: s2Paths }),
