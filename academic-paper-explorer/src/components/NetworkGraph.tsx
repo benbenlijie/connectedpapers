@@ -4,6 +4,8 @@ import { forceCollide } from 'd3-force'
 import { Loader2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork, networkCacheKeyForPaper } from '../hooks/usePaperNetwork'
+import { api } from '../services/api'
+import { mergeNetworkData } from '../lib/graphMerge'
 import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
@@ -24,7 +26,7 @@ import GraphLegend from './graph/GraphLegend'
 import GraphTimeline from './graph/GraphTimeline'
 import GraphMinimap from './graph/GraphMinimap'
 import GraphTooltip from './graph/GraphTooltip'
-import type { Paper } from '../types/domain'
+import type { Paper, NetworkEdge, NetworkNode } from '../types/domain'
 
 const ForceGraph3D = React.lazy(() => import('../graph/ForceGraph3DLazy'))
 
@@ -107,6 +109,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [engineTick, setEngineTick] = useState(0)
   const [menu, setMenu] = useState<{ x: number; y: number; node: GraphNode } | null>(null)
+  const [extra, setExtra] = useState<{ nodes: NetworkNode[]; edges: NetworkEdge[] }>({ nodes: [], edges: [] })
+  const [expandingId, setExpandingId] = useState<string | null>(null)
 
   const setContainer = useCallback((el: HTMLDivElement | null) => {
     containerElRef.current = el
@@ -124,29 +128,32 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
 
   useEffect(() => () => roRef.current?.disconnect(), [])
 
+  const combined = useMemo(
+    () => mergeNetworkData(networkData ?? { nodes: [], edges: [] }, extra),
+    [networkData, extra],
+  )
+
   const { nodes: filteredNodes, edges: filteredEdges } = useMemo(() => {
-    if (!networkData) return { nodes: [], edges: [] }
-    return filterGraph(networkData.nodes, networkData.edges, {
+    return filterGraph(combined.nodes, combined.edges, {
       yearRange: filters.yearRange,
       minCitations: filters.minCitations,
       selectedFields: filters.selectedFields,
       selectedVenues: filters.selectedVenues,
       timelineYear,
     })
-  }, [networkData, filters, timelineYear])
+  }, [combined, filters, timelineYear])
 
   // Year domain for the timeline slider: everything except the timeline filter,
   // otherwise the slider range collapses while dragging (feedback loop).
   const domainNodes = useMemo(() => {
-    if (!networkData) return []
-    return filterGraph(networkData.nodes, [], {
+    return filterGraph(combined.nodes, [], {
       yearRange: filters.yearRange,
       minCitations: filters.minCitations,
       selectedFields: filters.selectedFields,
       selectedVenues: filters.selectedVenues,
       timelineYear: null,
     }).nodes
-  }, [networkData, filters])
+  }, [combined, filters])
 
   // A new network invalidates any year filter carried over from the old paper.
   useEffect(() => {
@@ -155,6 +162,23 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   }, [networkData, setTimelineYear, setTimelinePlaying])
 
   const cacheKey = networkCacheKeyForPaper(rootPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
+
+  // Reset lazily-expanded nodes when the graph itself changes.
+  useEffect(() => {
+    setExtra({ nodes: [], edges: [] })
+  }, [cacheKey])
+
+  const expandNode = useCallback(async (node: GraphNode) => {
+    setExpandingId(node.id)
+    try {
+      const data = await api.networkWithPolling(node.id, 1, 50)
+      setExtra((prev) => mergeNetworkData(prev, data))
+    } catch {
+      // expansion is best-effort
+    } finally {
+      setExpandingId(null)
+    }
+  }, [])
 
   const graphData = useMemo(() => {
     const data = graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode })
@@ -299,6 +323,12 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       const items: NodeMenuItem[] = [
         { label: '以此为根重建网络', onSelect: () => rerootFromNode(node) },
         { label: '按标题搜索', onSelect: () => searchFromNode(node) },
+        {
+          label: expandingId === node.id ? '展开中…' : '展开该节点',
+          onSelect: () => {
+            if (expandingId !== node.id) void expandNode(node)
+          },
+        },
       ]
       if (!isCompare && comparePaper?.id !== node.id) {
         items.push({ label: '加入对比', onSelect: () => compareFromNode(node) })
@@ -308,7 +338,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       }
       return items
     },
-    [rerootFromNode, searchFromNode, compareFromNode, isCompare, comparePaper],
+    [rerootFromNode, searchFromNode, compareFromNode, isCompare, comparePaper, expandingId, expandNode],
   )
 
   const paintNode = useCallback(
