@@ -1,10 +1,11 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import HomePage from './pages/HomePage'
-import ReaderPage from './pages/ReaderPage'
 import { ErrorBoundary } from './components/ErrorBoundary'
+
+const ReaderPage = React.lazy(() => import('./pages/ReaderPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,7 +25,14 @@ function App() {
           <div className="min-h-screen bg-gray-900 text-white">
             <Routes>
               <Route path="/" element={<HomePage />} />
-              <Route path="/read/:arxivId" element={<ReaderPage />} />
+              <Route
+                path="/read/:arxivId"
+                element={
+                  <Suspense fallback={<div className="p-8 text-center text-gray-400">正在加载阅读器…</div>}>
+                    <ReaderPage />
+                  </Suspense>
+                }
+              />
             </Routes>
           </div>
           <Toaster
