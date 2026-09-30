@@ -15,7 +15,7 @@ export const config = {
   cache: {
     networkTtlHours: num(Bun.env.NETWORK_TTL_HOURS, 24),
     paperTtlHours: num(Bun.env.PAPER_TTL_HOURS, 168),
-    graphVersion: 3,
+    graphVersion: 4,
   },
   s2: {
     base: 'https://api.semanticscholar.org/graph/v1',

@@ -378,6 +378,18 @@ run over `mergeNetworkData(networkData, extra)`, so expanded neighbours appear
 immediately and the server-side cache persists the relations for next time. A
 `展开中…` label reflects the in-flight request.
 
+### 22. Relevance-prioritized expansion
+
+The BFS no longer expands candidates in insertion order. As each level is
+scanned, candidates are scored (`graph.ts:scoreCandidate`: `3 × linkCount` +
+`log10(citations+1)` + a year-proximity bonus to the root) and the root's S2
+recommendation ids form a priority tier. `rankCandidates` sorts priority ids
+first, then by score, and only the top `s2BatchSize` are fetched, so the node
+budget fills with the most relevant neighbours available at selection time. The
+recommendation ids are fetched once per build (`safeRecommendationIds`) and
+reused by `addRelatedNodes`. `graphVersion` / `NETWORK_GRAPH_VERSION` were bumped
+to 4 to invalidate caches built with the old ordering.
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
