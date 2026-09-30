@@ -97,7 +97,7 @@ server = Bun.serve({
         if (!token || !safeEqual(token, ACCESS_TOKEN)) return unauthorized()
       }
 
-      if (rateLimiter && p.startsWith('/api/')) {
+      if (rateLimiter && p.startsWith('/api/') && !p.startsWith('/api/paper/session/')) {
         const ip = clientIpFrom(req.headers, config.server.trustProxy, safeRequestIp(req))
         if (!rateLimiter(ip)) {
           throw new ApiError('RATE_LIMITED', '请求过于频繁，请稍后重试', 429)

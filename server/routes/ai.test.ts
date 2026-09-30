@@ -5,7 +5,6 @@ import { aiSessionRoute, aiChatRoute, aiHistoryRoute } from './ai'
 import { createOpencodeClient } from '../opencode'
 
 let db: ReturnType<typeof openDb>
-const provider = { name: 'mtcode', kind: 'openai' as const, baseUrl: 'http://up/v1', apiKey: 'k', model: 'm' }
 
 beforeEach(() => { db = openDb(':memory:') })
 
@@ -36,17 +35,24 @@ test('aiChatRoute forwards the composed prompt to opencode', async () => {
   const client = createOpencodeClient('http://oc')
   let sent = ''
   ;(client.promptAsync as any) = async (_s: string, _a: string, _p: string, _m: string, text: string) => { sent = text }
-  const res = await aiChatRoute(
-    new Request('http://x/api/ai/chat', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId: 's1', message: 'What is the loss?', excerpt: 'L = ...', target: 'zh', provider }),
-    }),
-    client,
-  )
-  expect(res.status).toBe(200)
-  expect(sent).toContain('What is the loss?')
-  expect(sent).toContain('L = ...')
-  expect(sent).toContain('zh')
+  const prev = Bun.env.LLM_PROVIDERS
+  Bun.env.LLM_PROVIDERS = JSON.stringify([{ name: 'mtcode', kind: 'openai', baseUrl: 'http://up/v1', model: 'm' }])
+  try {
+    const res = await aiChatRoute(
+      new Request('http://x/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 's1', message: 'What is the loss?', excerpt: 'L = ...', target: 'zh', provider: 'mtcode' }),
+      }),
+      client,
+    )
+    expect(res.status).toBe(200)
+    expect(sent).toContain('What is the loss?')
+    expect(sent).toContain('L = ...')
+    expect(sent).toContain('zh')
+  } finally {
+    if (prev === undefined) delete Bun.env.LLM_PROVIDERS
+    else Bun.env.LLM_PROVIDERS = prev
+  }
 })
 
 test('aiHistoryRoute maps messages to chat items', async () => {
