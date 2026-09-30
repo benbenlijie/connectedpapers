@@ -114,7 +114,7 @@ server = Bun.serve({
       if (p === '/api/lineage' && req.method === 'POST') return await lineageRoute(req)
       if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
       if (p === '/api/ai/session' && req.method === 'POST') return await aiSessionRoute(req, db, opencodeClient)
-      if (p === '/api/ai/chat' && req.method === 'POST') return await aiChatRoute(req, opencodeClient)
+      if (p === '/api/ai/chat' && req.method === 'POST') return await aiChatRoute(req, opencodeClient, db)
       if (p === '/api/ai/history' && req.method === 'GET') return await aiHistoryRoute(req, opencodeClient)
       if (p === '/api/ai/abort' && req.method === 'POST') {
         const sessionId = new URL(req.url).searchParams.get('sessionId') ?? ''

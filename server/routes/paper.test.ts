@@ -50,3 +50,32 @@ test('unknown session returns 404', async () => {
   const res = await paperSearchRoute(req('/api/paper/session/nope/search?q=x'), db, TOKEN)
   expect(res.status).toBe(404)
 })
+
+const HTML = `<!doctype html><html><head><title>Loaded Paper</title></head>
+<body>
+<section><h2>1 Intro</h2><p>A transformer model for sequence transduction tasks.</p></section>
+</body></html>`
+
+test('search lazily loads and caches content on a miss', async () => {
+  const empty = openDb(':memory:')
+  setSession('2401.00009', 'sess-load', empty)
+  let calls = 0
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    calls += 1
+    return new Response(HTML, { status: 200 })
+  }) as unknown as typeof fetch
+  try {
+    const first = await paperSearchRoute(req('/api/paper/session/sess-load/search?q=transformer'), empty, TOKEN)
+    expect(first.status).toBe(200)
+    const body = (await first.json()) as { data: { hits: unknown[] } }
+    expect(body.data.hits.length).toBeGreaterThan(0)
+    expect(calls).toBe(1)
+
+    const second = await paperSearchRoute(req('/api/paper/session/sess-load/search?q=transformer'), empty, TOKEN)
+    expect(second.status).toBe(200)
+    expect(calls).toBe(1)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

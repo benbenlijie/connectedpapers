@@ -81,7 +81,6 @@ export function getCachedContent(arxivId: string, dbIn: Database = defaultDb): P
   const rows = dbIn
     .query('select idx, heading, text from paper_sections where arxiv_id=? order by idx')
     .all(arxivId) as { idx: number; heading: string; text: string }[]
-  if (rows.length === 0) return null
   return {
     arxivId,
     title: head.title,

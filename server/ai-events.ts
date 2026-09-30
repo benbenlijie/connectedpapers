@@ -12,7 +12,9 @@ interface RawEvent {
 function detailFromInput(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined
   const v = Object.values(input as Record<string, unknown>)[0]
-  return typeof v === 'string' ? v : undefined
+  if (typeof v === 'string') return v
+  if (typeof v === 'number') return String(v)
+  return undefined
 }
 
 /**
@@ -24,10 +26,10 @@ export function normalizeOpencodeEvent(sessionId: string, event: RawEvent): AiCl
   const props = event.properties ?? {}
   const evSession = props.sessionID ?? props.part?.sessionID
   if (event.type === 'session.idle') {
-    return evSession === sessionId ? { type: 'done' } : null
+    return { type: 'done' }
   }
   if (event.type === 'session.error') {
-    if (evSession !== sessionId) return null
+    if (evSession !== undefined && evSession !== sessionId) return null
     return { type: 'error', message: props.error?.message ?? 'AI 运行出错' }
   }
   if (event.type === 'message.part.delta') {

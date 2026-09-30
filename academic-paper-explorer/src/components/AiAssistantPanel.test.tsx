@@ -4,7 +4,7 @@ import AiAssistantPanel from './AiAssistantPanel'
 
 vi.mock('../lib/aiAgent', () => ({
   ensureSession: vi.fn(async () => 's1'),
-  sendMessage: vi.fn(async () => {}),
+  sendMessage: vi.fn(async () => ({ sessionId: 's1' })),
   abortSession: vi.fn(async () => {}),
   fetchHistory: vi.fn(async () => []),
   streamEvents: vi.fn(() => () => {}),

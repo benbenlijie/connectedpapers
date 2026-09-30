@@ -38,16 +38,17 @@ export async function sendMessage(input: {
   message: string
   excerpt?: string
   target: string
-}): Promise<void> {
+}): Promise<{ sessionId: string }> {
   const res = await fetch(`${API_BASE}/ai/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body?.error?.message ?? `发送失败: ${res.status}`)
-  }
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error?.message ?? `发送失败: ${res.status}`)
+  const sessionId = body?.data?.sessionId
+  if (typeof sessionId !== 'string') throw new Error('发送失败: 响应格式错误')
+  return { sessionId }
 }
 
 export async function abortSession(sessionId: string): Promise<void> {
@@ -84,6 +85,10 @@ export function streamEvents(
         const parsed = parseSseChunk(buffer)
         buffer = parsed.rest
         parsed.events.forEach(onEvent)
+      }
+      buffer += decoder.decode()
+      if (buffer.trim()) {
+        parseSseChunk(buffer + '\n\n').events.forEach(onEvent)
       }
     } catch (e) {
       if (!controller.signal.aborted) onError?.(e)
