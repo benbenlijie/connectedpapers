@@ -107,3 +107,15 @@ create table if not exists translations (
   created_at      text not null default (datetime('now'))
 );
 create index if not exists translations_target_idx on translations(target_lang);
+
+create table if not exists paper_relations (
+  from_id    text not null,
+  to_id      text not null,
+  type       text not null,
+  weight     real not null default 1,
+  source     text,
+  updated_at text not null default (datetime('now')),
+  primary key (from_id, to_id, type)
+);
+create index if not exists paper_relations_from_idx on paper_relations(from_id, type);
+create index if not exists paper_relations_to_idx   on paper_relations(to_id, type);
