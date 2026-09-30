@@ -52,7 +52,7 @@ export function searchPapers(query: string): Promise<S2Paper[]> {
       { headers: headers(), signal: AbortSignal.timeout(15000) },
     )
     if (!res.ok) throw Object.assign(new Error(`S2 search ${res.status} ${res.statusText}`), { status: res.status })
-    return (await res.json()).data ?? []
+    return ((await res.json()) as { data?: S2Paper[] }).data ?? []
   }, { retries: 3, baseDelayMs: 1200 })
 }
 
@@ -66,7 +66,7 @@ export function getPapersBatch(s2Paths: string[]): Promise<(S2Paper | null)[]> {
       signal: AbortSignal.timeout(20000),
     })
     if (!res.ok) throw Object.assign(new Error(`S2 batch ${res.status}`), { status: res.status })
-    return res.json()
+    return (await res.json()) as (S2Paper | null)[]
   }, { retries: 3, baseDelayMs: 1200 })
 }
 

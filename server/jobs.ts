@@ -31,7 +31,7 @@ export function setJob(id: string, patch: { status?: string; progress?: unknown;
   const cur = db.query('select status, attempts from jobs where id=?').get(id) as { status: string; attempts: number } | null
   if (!cur) return
   const sets: string[] = []
-  const args: unknown[] = []
+  const args: (string | number | null)[] = []
   if (patch.status !== undefined) { sets.push('status=?'); args.push(patch.status) }
   if (patch.progress !== undefined) { sets.push('progress=?'); args.push(JSON.stringify(patch.progress)) }
   if (patch.result_hash !== undefined) { sets.push('result_hash=?'); args.push(patch.result_hash) }

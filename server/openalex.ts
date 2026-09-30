@@ -20,7 +20,7 @@ export function searchOpenAlex(query: string): Promise<any[]> {
       signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) throw Object.assign(new Error(`OpenAlex ${res.status} ${res.statusText}`), { status: res.status })
-    return (await res.json()).results ?? []
+    return ((await res.json()) as { results?: unknown[] }).results ?? []
   }, { retries: 3, baseDelayMs: 1000 })
 }
 

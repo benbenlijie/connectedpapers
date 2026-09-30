@@ -112,8 +112,11 @@ LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1",
 
 ```bash
 bun test server/                          # 后端测试
+bun run typecheck:server                  # 后端类型检查（tsc --noEmit）
 pnpm --dir academic-paper-explorer test   # 前端测试
 ```
+
+CI（GitHub Actions，`.github/workflows/ci.yml`）：后端 `bun test` + `tsc`，前端 `test` / `typecheck` / `lint` / `build`。
 
 ## 故障排除
 
