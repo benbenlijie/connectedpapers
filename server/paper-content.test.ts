@@ -20,6 +20,23 @@ test('extractSections pulls title and section text', async () => {
   expect(sections[1].idx).toBe(1)
 })
 
+test('extractSections attributes text correctly across nested sections', async () => {
+  const nested = `<!doctype html><html><head><title>Nested</title></head>
+<body>
+<section id="S1"><h2>1 Outer</h2><p>Outer before intro.</p>
+<section id="S1.SS1"><h3>1.1 Inner</h3><p>Inner body text.</p></section>
+<p>Outer after inner.</p></section>
+</body></html>`
+  const { sections } = await extractSections(nested)
+  const outer = sections.find((s) => s.heading.includes('Outer'))!
+  const inner = sections.find((s) => s.heading.includes('Inner'))!
+  expect(inner.text).toContain('Inner body text')
+  expect(inner.text).not.toContain('Outer after inner')
+  expect(outer.text).toContain('Outer before intro')
+  expect(outer.text).toContain('Outer after inner')
+  expect(outer.text).not.toContain('Inner body text')
+})
+
 test('loadPaperContent uses the cache when fresh', async () => {
   saveContent(
     { arxivId: '2401.00001', title: 'T', sections: [{ idx: 0, heading: 'H', text: 'body' }], source: 'html' },
