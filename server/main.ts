@@ -7,12 +7,14 @@ import { networkRoute } from './routes/network'
 import { jobRoute } from './routes/jobs'
 import { translateRoute } from './routes/translate'
 import { llmStatusRoute } from './routes/llm'
-import { aiRoute } from './routes/ai'
+import { aiSessionRoute, aiChatRoute, aiHistoryRoute, aiStreamRoute, aiAbortRoute } from './routes/ai'
 import { neighborsRoute } from './routes/neighbors'
 import { lineageRoute } from './routes/lineage'
 import { paperSearchRoute, paperSectionRoute } from './routes/paper'
 import { INTERNAL_TOKEN } from './internal-token'
 import { db } from './db'
+import { createOpencodeClient, OpencodeManager } from './opencode'
+import { join } from 'node:path'
 import { cookieHeader, clientIpFrom, extractToken, safeEqual, withBasePath } from './auth'
 import { createRateLimiter } from './rateLimit'
 
@@ -52,6 +54,22 @@ async function serveStatic(pathname: string): Promise<Response> {
 
 recoverJobs()
 
+const opencodeManager = config.ai.enabled
+  ? new OpencodeManager({
+      runtimeDir: join(import.meta.dir, '../data/opencode-runtime'),
+      baseUrl: `http://127.0.0.1:${config.ai.port}`,
+      port: config.ai.port,
+    })
+  : null
+const opencodeClient = createOpencodeClient(`http://127.0.0.1:${config.ai.port}`)
+
+if (opencodeManager) {
+  opencodeManager.start().catch((e) => console.error('[opencode] failed to start:', e))
+  const stop = () => void opencodeManager.stop()
+  process.on('SIGINT', stop)
+  process.on('SIGTERM', stop)
+}
+
 let server: ReturnType<typeof Bun.serve>
 server = Bun.serve({
   port: config.server.port,
@@ -62,7 +80,7 @@ server = Bun.serve({
     try {
       if (req.method === 'OPTIONS') return new Response(null, { status: 204 })
 
-      if (ACCESS_TOKEN) {
+      if (ACCESS_TOKEN && !p.startsWith('/api/paper/session/')) {
         const { token, fromQuery } = extractToken(req.headers, url)
         if (fromQuery && token && safeEqual(token, ACCESS_TOKEN)) {
           const clean = new URL(url)
@@ -91,7 +109,17 @@ server = Bun.serve({
       if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
       if (p === '/api/lineage' && req.method === 'POST') return await lineageRoute(req)
       if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
-      if (p === '/api/ai' && req.method === 'POST') return await aiRoute(req)
+      if (p === '/api/ai/session' && req.method === 'POST') return await aiSessionRoute(req, db, opencodeClient)
+      if (p === '/api/ai/chat' && req.method === 'POST') return await aiChatRoute(req, opencodeClient)
+      if (p === '/api/ai/history' && req.method === 'GET') return await aiHistoryRoute(req, opencodeClient)
+      if (p === '/api/ai/abort' && req.method === 'POST') {
+        const sessionId = new URL(req.url).searchParams.get('sessionId') ?? ''
+        return await aiAbortRoute(opencodeClient, sessionId)
+      }
+      if (p === '/api/ai/stream' && req.method === 'GET') {
+        const sessionId = new URL(req.url).searchParams.get('sessionId') ?? ''
+        return await aiStreamRoute(req, opencodeClient, sessionId)
+      }
       if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
       if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
       if (p.startsWith('/api/neighbors/') && req.method === 'GET') return await neighborsRoute(p.split('/').pop()!)
