@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import DetailsPanel from './DetailsPanel'
 import { useUiStore } from '../store/useUiStore'
 import { useNotesStore } from '../store/useNotesStore'
+import { useLibraryStore } from '../store/useLibraryStore'
 
 const renderPanel = () => render(<MemoryRouter><DetailsPanel /></MemoryRouter>)
 
@@ -19,6 +20,7 @@ vi.mock('../hooks/usePaperNetwork', () => ({
 beforeEach(() => {
   localStorage.clear()
   useNotesStore.setState({ notes: {} })
+  useLibraryStore.setState({ library: { favorites: [], collections: [], savedSearches: [] } })
   useUiStore.setState({
     selectedPaper: { id: 'p1', title: 'T', citation_count: 0, authors: '', source: 'semantic_scholar' },
     selectedNodeId: null,
@@ -66,5 +68,11 @@ describe('DetailsPanel notes', () => {
       'href',
       '/read/2401.00001?pid=p1',
     )
+  })
+
+  it('toggles favorite for the current paper', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /收藏/ }))
+    expect(useLibraryStore.getState().library.favorites).toEqual(['p1'])
   })
 })
