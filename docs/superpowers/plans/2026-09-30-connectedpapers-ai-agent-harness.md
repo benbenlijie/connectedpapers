@@ -1591,6 +1591,18 @@ Add route matches inside the `try` block (before the generic `/api/` 404):
 ```
 Add `import { db } from './db'` if not already present.
 
+**Also exempt the internal paper routes from the `ACCESS_TOKEN` gate.** The
+spawned tool authenticates with `X-Internal-Token`, not the app's access token,
+so when `ACCESS_TOKEN` is set the gate at the top of `fetch` would reject it
+before it reaches `paper.ts`. Change the gate condition from
+`if (ACCESS_TOKEN) {` to:
+
+```ts
+      if (ACCESS_TOKEN && !p.startsWith('/api/paper/session/')) {
+```
+
+(The `/api/paper/session/*` handlers still enforce their own `X-Internal-Token`.)
+
 - [ ] **Step 7: Typecheck and run the whole server suite**
 
 Run: `bunx tsc --noEmit -p server/tsconfig.json && bun test server/`
