@@ -1,13 +1,12 @@
 import type { Database } from 'bun:sqlite'
 import { readJson, json, ApiError } from '../errors'
-import { loadProviders, type ProviderConfig } from '../llm'
+import { loadProviders } from '../llm'
 import { getSession, setSession } from '../ai-sessions'
 import { OPENCODE_AGENT } from '../opencode-config'
 import { normalizeOpencodeEvent, serializeClientEvent } from '../ai-events'
 import type { OpencodeClient } from '../opencode'
 
-function firstOpenaiProvider(requested?: string | ProviderConfig) {
-  if (requested && typeof requested !== 'string') return requested
+function firstOpenaiProvider(requested?: string) {
   const usable = loadProviders().filter((p) => p.kind === 'openai')
   if (requested) {
     const found = usable.find((p) => p.name === requested)
@@ -86,7 +85,7 @@ export async function aiStreamRoute(req: Request, client: OpencodeClient, sessio
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-          buffer += decoder.decode(value, { stream: true })
+          buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n')
           const frames = buffer.split('\n\n')
           buffer = frames.pop() ?? ''
           for (const frame of frames) {
