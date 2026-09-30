@@ -441,6 +441,14 @@ an "加入集合" select (with 新建); `SearchBar` shows saved searches in its 
 with a 保存当前 action. Collections store paper ids (same key convention as the
 reading list). Keys are not part of the graph, so no cache bump is involved.
 
+### 27. Toggling edge types
+
+`useUiStore.hiddenEdgeTypes: EdgeType[]` (with `toggleEdgeType`) drives edge
+visibility. `NetworkGraph` drops hidden types right after `filterGraph`, and
+`GraphLegend` renders each edge type as a button (coloured swatch, struck
+through + dimmed when hidden) so the legend doubles as a filter. Hidden types are
+session-only (not in the URL).
+
 ## Data model
 
 Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to

@@ -8,6 +8,7 @@ beforeEach(() => {
   useUiStore.setState({
     selectedPaper: null, graphDepth: null, graphMaxNodes: null,
     comparePaper: null, compareSelectedNodeId: null,
+    hiddenEdgeTypes: [],
     graphView: '2d', colorMode: 'cluster', sizeMode: 'citations',
     timelineYear: null, timelinePlaying: false, graphQuery: '',
   })
@@ -60,8 +61,7 @@ describe('useUiStore network params', () => {
   })
 })
 
-describe('useUiStore comparison state', () => {
-  it('sets the compare paper and clears its node selection', () => {
+describe('useUiStore comparison state', () => {  it('sets the compare paper and clears its node selection', () => {
     useUiStore.getState().setCompareSelectedNodeId('n1')
     useUiStore.getState().setComparePaper(paper('p2'))
     const s = useUiStore.getState()
@@ -72,5 +72,14 @@ describe('useUiStore comparison state', () => {
   it('tracks the compare node selection independently', () => {
     useUiStore.getState().setCompareSelectedNodeId('n2')
     expect(useUiStore.getState().compareSelectedNodeId).toBe('n2')
+  })
+})
+
+describe('useUiStore edge visibility', () => {
+  it('toggles an edge type hidden and back', () => {
+    useUiStore.getState().toggleEdgeType('coupling')
+    expect(useUiStore.getState().hiddenEdgeTypes).toEqual(['coupling'])
+    useUiStore.getState().toggleEdgeType('coupling')
+    expect(useUiStore.getState().hiddenEdgeTypes).toEqual([])
   })
 })
