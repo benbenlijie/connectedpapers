@@ -177,6 +177,27 @@ cp data/app.db data/app.db.bak        # 备份
 git pull && bun run build:web && sudo systemctl restart connectedpapers
 ```
 
+## 6. 子路径挂载（例如 https://watchdeep.net/papers/）
+
+若不想占用域名根（根已被其他站点使用），可挂到子路径：
+
+1. 构建时指定 base：`VITE_BASE=/papers/ bun run build:web`（前端资源与 API 会走 `/papers/...`）
+2. `server/.env` 增加：`BASE_PATH=/papers`（用于 `?token=` 登录后重定向回子路径）
+3. 反向代理（nginx，注意 `proxy_pass` 末尾的 `/` 会剥离前缀）：
+
+```nginx
+location /papers/ {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+}
+```
+
+访问 `https://你的域名/papers/?token=口令` 即可。
+
 ## 验证
 
 启动后访问 `http://127.0.0.1:8787`，确认：页面正常加载、搜索可用、论文详情正常、网络图可生成。

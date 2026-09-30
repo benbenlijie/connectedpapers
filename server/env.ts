@@ -8,6 +8,7 @@ export const env = {
   openalexApiKey: opt('OPENALEX_API_KEY'),
   contactEmail: opt('CONTACT_EMAIL') ?? 'researcher@example.com',
   accessToken: opt('ACCESS_TOKEN'),
+  basePath: opt('BASE_PATH') ?? '',
   trustProxy: opt('TRUST_PROXY') === '1' || opt('TRUST_PROXY') === 'true',
   port: Number(opt('PORT') ?? 8787),
   hostname: opt('HOST') ?? '127.0.0.1',

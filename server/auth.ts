@@ -54,8 +54,7 @@ export function clientIpFrom(headers: Headers, trustProxy: boolean, fallback: st
   return fallback
 }
 
-export function cookieHeader(token: string, secure: boolean): string {
-  const parts = [
+export function cookieHeader(token: string, secure: boolean): string {  const parts = [
     `${AUTH_COOKIE}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
@@ -64,4 +63,11 @@ export function cookieHeader(token: string, secure: boolean): string {
   ]
   if (secure) parts.push('Secure')
   return parts.join('; ')
+}
+
+/** Prepend the public base path (when mounted under a sub-path) to a location. */
+export function withBasePath(basePath: string, pathname: string, search = ''): string {
+  const base = (basePath || '').replace(/\/+$/, '')
+  const path = pathname.startsWith('/') ? pathname : `/${pathname}`
+  return `${base}${path}${search}` || '/'
 }

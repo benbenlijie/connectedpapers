@@ -47,3 +47,11 @@ test('cookieHeader includes Secure over https', () => {
   expect(cookieHeader('tok', true)).toContain('Secure')
   expect(cookieHeader('tok', false)).not.toContain('Secure')
 })
+
+test('withBasePath prefixes a sub-path mount', async () => {
+  const { withBasePath } = await import('./auth')
+  expect(withBasePath('/papers', '/', '')).toBe('/papers/')
+  expect(withBasePath('/papers', '/x', '?a=1')).toBe('/papers/x?a=1')
+  expect(withBasePath('/papers/', '/x')).toBe('/papers/x')
+  expect(withBasePath('', '/x')).toBe('/x')
+})

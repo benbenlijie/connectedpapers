@@ -42,6 +42,7 @@ export const config = {
     port: env.port,
     hostname: env.hostname,
     accessToken: env.accessToken,
+    basePath: env.basePath,
     trustProxy: env.trustProxy,
     rateLimitPerMin: num(Bun.env.RATE_LIMIT_PER_MIN, 120),
   },

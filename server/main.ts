@@ -9,7 +9,7 @@ import { translateRoute } from './routes/translate'
 import { llmStatusRoute } from './routes/llm'
 import { aiRoute } from './routes/ai'
 import { neighborsRoute } from './routes/neighbors'
-import { cookieHeader, clientIpFrom, extractToken, safeEqual } from './auth'
+import { cookieHeader, clientIpFrom, extractToken, safeEqual, withBasePath } from './auth'
 import { createRateLimiter } from './rateLimit'
 
 const WEB_DIST = new URL('../academic-paper-explorer/dist', import.meta.url).pathname
@@ -67,7 +67,7 @@ server = Bun.serve({
           return new Response(null, {
             status: 302,
             headers: {
-              Location: clean.pathname + clean.search,
+              Location: withBasePath(config.server.basePath, clean.pathname, clean.search),
               'Set-Cookie': cookieHeader(ACCESS_TOKEN, secure),
             },
           })
