@@ -6,17 +6,19 @@ import type { EdgeType } from '../../types/domain'
 
 interface Props {
   nodes: GraphNode[]
+  rootNode?: GraphNode | null
+  onSelectRoot?: () => void
 }
 
 const EDGE_LEGEND: { type: EdgeType; label: string }[] = [
-  { type: 'citation', label: '引用关系' },
-  { type: 'reference', label: '参考关系' },
+  { type: 'citation', label: '后续工作（引用）' },
+  { type: 'reference', label: '前置工作（参考）' },
   { type: 'related', label: '相关（推荐）' },
   { type: 'coupling', label: '文献耦合' },
   { type: 'semantic', label: '语义相近' },
 ]
 
-const GraphLegend: React.FC<Props> = ({ nodes }) => {
+const GraphLegend: React.FC<Props> = ({ nodes, rootNode, onSelectRoot }) => {
   const { colorMode, hiddenEdgeTypes, toggleEdgeType } = useUiStore()
 
   let entries: { key: string; label: string; color: string }[] = []
@@ -55,10 +57,16 @@ const GraphLegend: React.FC<Props> = ({ nodes }) => {
         </div>
       )}
       <div className="mt-2 space-y-1 border-t border-gray-600 pt-2 text-gray-300">
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onSelectRoot}
+          disabled={!onSelectRoot}
+          title={rootNode?.title || undefined}
+          className="flex w-full items-center gap-2 text-left enabled:hover:text-white disabled:cursor-default"
+        >
           <span className="h-3 w-3 rounded-full border-2 border-orange-500" />
-          <span>根论文</span>
-        </div>
+          <span className="line-clamp-1">根论文</span>
+        </button>
         <div className="mb-1 mt-1 text-[10px] text-gray-500">点击边类型可显示/隐藏</div>
         {EDGE_LEGEND.map((e) => {
           const hidden = hiddenEdgeTypes.includes(e.type)

@@ -9,6 +9,11 @@ import { useLibraryStore } from '../store/useLibraryStore'
 
 const renderPanel = () => render(<MemoryRouter><DetailsPanel /></MemoryRouter>)
 
+const lineageMock = vi.hoisted(() => ({ value: undefined as unknown }))
+vi.mock('../hooks/usePaperLineage', () => ({
+  usePaperLineage: () => ({ data: lineageMock.value, isLoading: false, error: null }),
+}))
+
 vi.mock('../hooks/usePaperDetails', () => ({
   usePaperDetails: () => ({ data: undefined, isLoading: false, error: null }),
 }))
@@ -19,6 +24,7 @@ vi.mock('../hooks/usePaperNetwork', () => ({
 
 beforeEach(() => {
   localStorage.clear()
+  lineageMock.value = undefined
   useNotesStore.setState({ notes: {} })
   useLibraryStore.setState({ library: { favorites: [], collections: [], savedSearches: [] } })
   useUiStore.setState({
@@ -74,5 +80,18 @@ describe('DetailsPanel notes', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /收藏/ }))
     expect(useLibraryStore.getState().library.favorites).toEqual(['p1'])
+  })
+
+  it('lists prior/follow-up works and selects one on click', () => {
+    lineageMock.value = {
+      root_id: 'p1',
+      prior: [{ paperId: 'r1', title: 'Prior work', year: 2018 }],
+      followUps: [{ paperId: 'c1', title: 'Follow work', year: 2024, isInfluential: true }],
+    }
+    renderPanel()
+    expect(screen.getByText('前置工作（参考）')).toBeInTheDocument()
+    expect(screen.getByText('后续工作（引用）')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Follow work'))
+    expect(useUiStore.getState().selectedNodeId).toBe('c1')
   })
 })

@@ -68,7 +68,7 @@ export const useUiStore = create<UiState>((set) => ({
   comparePaper: null,
   compareSelectedNodeId: null,
   setSelectedPaper: (p) => set({ selectedPaper: p }),
-  selectRootPaper: (p) => set({ selectedPaper: p, graphDepth: null, graphMaxNodes: null }),
+  selectRootPaper: (p) => set({ selectedPaper: p, selectedNodeId: null, graphDepth: null, graphMaxNodes: null }),
   setComparePaper: (p) => set({ comparePaper: p, compareSelectedNodeId: null }),
   setCompareSelectedNodeId: (id) => set({ compareSelectedNodeId: id }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),

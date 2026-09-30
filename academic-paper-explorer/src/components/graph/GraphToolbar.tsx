@@ -1,10 +1,12 @@
 import React, { useState } from 'react'
-import { Search, Download } from 'lucide-react'
+import { Search, Download, List } from 'lucide-react'
 import { useUiStore } from '../../store/useUiStore'
 import type { ColorMode, SizeMode } from '../../graph/encoding'
 
 interface GraphToolbarProps {
   placement?: 'top-left' | 'bottom-left'
+  nodeListOpen?: boolean
+  onToggleNodeList?: () => void
   onExportPng?: () => void
   onExportJsonVisible?: () => void
   onExportJsonFull?: () => void
@@ -25,6 +27,8 @@ const SIZE_MODES: { value: SizeMode; label: string }[] = [
 
 const GraphToolbar: React.FC<GraphToolbarProps> = ({
   placement = 'top-left',
+  nodeListOpen = false,
+  onToggleNodeList,
   onExportPng,
   onExportJsonVisible,
   onExportJsonFull,
@@ -54,6 +58,20 @@ const GraphToolbar: React.FC<GraphToolbarProps> = ({
           </button>
         ))}
       </div>
+
+      {onToggleNodeList && (
+        <button
+          type="button"
+          aria-pressed={nodeListOpen}
+          onClick={onToggleNodeList}
+          className={`flex items-center gap-1 rounded px-2 py-1 ${
+            nodeListOpen ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+          }`}
+        >
+          <List className="h-3 w-3" />
+          节点列表
+        </button>
+      )}
 
       <label className="flex items-center gap-2">
         <span className="text-gray-400">配色</span>

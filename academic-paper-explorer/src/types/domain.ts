@@ -44,6 +44,18 @@ export type NetworkEdge = { from: string; to: string; type: EdgeType; weight: nu
 export type NetworkData = { nodes: NetworkNode[]; edges: NetworkEdge[] }
 export type SearchQuery = { query: string; query_type: 'keyword' | 'doi' | 'arxiv' | 's2_id' }
 
+export type LineagePaper = {
+  paperId: string
+  title: string
+  year?: number
+  citationCount?: number
+  venue?: string
+  authors?: string
+  isInfluential?: boolean
+}
+
+export type PaperLineage = { root_id: string; prior: LineagePaper[]; followUps: LineagePaper[] }
+
 export type PaperDetails = {
   paper: {
     id: string

@@ -28,6 +28,7 @@ Hard constraints that shape every decision below:
    ├── POST /api/search   server/routes/search.ts             │
    ├── POST /api/details  server/routes/details.ts            │
     ├── POST /api/network  server/routes/network.ts ──┐        │
+    ├── POST /api/lineage  server/routes/lineage.ts            │
     ├── GET  /api/jobs/:id server/routes/jobs.ts ─────┼──┐     │
     ├── POST /api/translate server/routes/translate.ts │  │     │
     ├── GET  /api/llm/status server/routes/llm.ts ─────┘  │     │
@@ -48,7 +49,7 @@ Hard constraints that shape every decision below:
 ```
 
 `server/main.ts` is the only transport layer: it parses the URL, dispatches the
-four `/api/*` routes, falls back to static files for everything else (rejecting
+`/api/*` routes, falls back to static files for everything else (rejecting
 `..` paths), and funnels thrown `ApiError`s through `handleError`.
 
 ## Directory responsibilities
@@ -61,11 +62,12 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `routes/search.ts` | Keyword search fan-out (S2 + OpenAlex in parallel), single-paper lookup, dedupe/sort, search logging. |
 | `routes/details.ts` | Paper metadata + recommendations + citation contexts; upserts the paper. |
 | `routes/network.ts` | Validates and clamps `depth` (1–3) / `max_nodes` (1–300), delegates to the job queue. |
+| `routes/lineage.ts` | `POST /api/lineage`: a paper's direct predecessors (references) and successors (citations), best-effort per side. |
 | `routes/jobs.ts` | Returns job status and, when done, the cached result. |
 | `ids.ts` | `resolvePaperId`: classifies raw input (doi/arxiv/openalex/s2) into an S2 path. |
 | `resolve.ts` | `toS2Input`: converts an OpenAlex-only id into a DOI/arXiv path S2 understands. |
 | `retry.ts` | `withRetry` with exponential backoff; retries 429/403/5xx/timeout/TypeError. |
-| `s2.ts` | Semantic Scholar client: `getPaper`, `getPapersBatch`, `getRecommendations`, `getCitationContexts`. |
+| `s2.ts` | Semantic Scholar client: `getPaper`, `getPapersBatch`, `getRecommendations`, `getCitationContexts`, `getReferences`, `getCitations`. |
 | `openalex.ts` | OpenAlex client: search, DOI lookup, `getWorkByOpenAlexId`, abstract reconstruction. |
 | `normalize.ts` | Shared S2 paper shape so search and details responses agree. |
 | `papers.ts` | `upsertPaper`, `upsertCitation`, `ensurePaperStub` (FK ordering). |
@@ -73,6 +75,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `embeddings.ts` | SPECTER2 vector cache (SQLite) + cosine kNN semantic edges. |
 | `routes/neighbors.ts` | `GET /api/neighbors/:id`: stored relations + paper rows. |
 | `graph.ts` | BFS crawl batcher (references + citations + recommendations/OpenAlex related), bibliographic coupling, `pagerank` + `connectedComponents`. |
+| `lineage.ts` | Pure ranking of S2 references/citations into prior/follow-up lists + best-effort fetch. |
 | `identity.ts` | Canonical work ids (DOI > arXiv > provider id) + duplicate merging. |
 | `community.ts` | Louvain community detection (pure). |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
@@ -93,9 +96,10 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | Path | Responsibility |
 | --- | --- |
 | `services/api.ts` | Fetch wrapper, zod parsing, `networkWithPolling`. |
-| `services/schemas.ts` | Zod schemas for search/network/job/details responses. |
+| `services/schemas.ts` | Zod schemas for search/network/job/details/lineage responses. |
 | `hooks/useSearchPapers.ts` | React Query wrapper for `POST /api/search`. |
 | `hooks/usePaperDetails.ts` | React Query wrapper for `POST /api/details`. |
+| `hooks/usePaperLineage.ts` | React Query wrapper for `POST /api/lineage` (prior/follow-up works). |
 | `hooks/usePaperNetwork.ts` | React Query wrapper for the network job; picks adaptive depth/maxNodes. |
 | `hooks/useUrlSync.ts` | Two-way sync between the UI store and the address bar (deep links). |
 | `graph/encoding.ts` | Pure color/size encoding by dimension (cluster/year/field, citations/pagerank). |
@@ -455,7 +459,10 @@ session-only (not in the URL).
 （`全部年份` or `≤ YYYY 年`）, the min/max year at the slider ends, and the hint
 "仅显示该年份及更早发表的论文". Playback starts from the earliest year when idle
 (`togglePlay`), so pressing play always has somewhere to go, and a "全部" button
-clears the filter (replacing the bare ✕).
+clears the filter (replacing the bare ✕). When the root paper has a year inside
+the visible range, the track is split at that year — blue 前置 (≤ root year) vs
+green 后续 (> root year) with a marker — so the timeline reads as the paper's
+own before/after.
 
 ### 29. Public deployment gate
 
@@ -468,6 +475,20 @@ token from the URL. Over-limit `/api/*` requests are rejected 429 by a per-IP
 fixed-window limiter (`rateLimit.ts:createRateLimiter`), using
 `X-Forwarded-For` only when `TRUST_PROXY=1`. Deployment behind nginx with TLS and
 systemd is documented in `DEPLOYMENT_GUIDE.md` §5.
+
+### 30. Predecessors & successors (lineage)
+
+`POST /api/lineage` (`routes/lineage.ts`) answers "what came before / after this
+paper?" directly, without a full graph crawl. `lineage.ts:fetchLineage` calls
+S2's `/paper/{id}/references` and `/paper/{id}/citations` in parallel (each
+best-effort; only both failing is an error) and `mapLineageEntries` ranks each
+side — influential links first, then most-cited, then newest — deduped and capped
+(`limit`, default 25, max 100). The response is
+`{ root_id, prior: [...], followUps: [...] }`. In the UI, `DetailsPanel` shows a
+研究脉络 section with clickable 前置工作（参考）/ 后续工作（引用） lists that select the
+node in the graph, and `GraphLegend` labels the `reference`/`citation` edge types
+accordingly; `NetworkGraph` keeps the root's own reference/citation edges fully
+lit as a lineage cue.
 
 ## Data model
 
