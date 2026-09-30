@@ -101,6 +101,7 @@ LLM_PROVIDERS=[{"name":"mtcode","kind":"openai","baseUrl":"https://<mtcode>/v1",
 - `POST /api/details` — 获取论文详情
 - `POST /api/network` — 获取/构建引用网络
 - `GET /api/jobs/:id` — 查询异步任务状态
+- `GET /api/neighbors/:id` — 查询本地已持久化的关系（引用/相关/耦合）
 - `POST /api/translate` — 批量翻译（走可配置的 LLM provider）
 - `POST /api/ai` — 阅读辅助问答（解释 / 总结 / 提问）
 - `GET /api/llm/status` — 查询可用的 LLM/翻译 provider 候选

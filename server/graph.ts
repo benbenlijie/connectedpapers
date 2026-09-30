@@ -3,6 +3,7 @@ import { getRelatedWorksByDoi } from './openalex'
 import { canonicalKeyFromS2, mergeDuplicates, normalizeDoi } from './identity'
 import { config } from './config'
 import { upsertPaper, upsertCitation, ensurePaperStub } from './papers'
+import { persistRelations } from './relations'
 
 export interface GraphNode {
   id: string; label: string; title: string; abstract?: string; year?: number
@@ -211,6 +212,12 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
   const merged = mergeDuplicates([...nodes.values()], edges, canonicalOf)
   const nodeList = merged.nodes
   const edgeList = merged.edges
+
+  try {
+    persistRelations(edgeList)
+  } catch {
+    // persistence is best-effort
+  }
 
   const pr = pagerank(nodeList, edgeList)
   const comps = connectedComponents(nodeList, edgeList)

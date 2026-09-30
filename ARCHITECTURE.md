@@ -69,6 +69,8 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `openalex.ts` | OpenAlex client: search, DOI lookup, `getWorkByOpenAlexId`, abstract reconstruction. |
 | `normalize.ts` | Shared S2 paper shape so search and details responses agree. |
 | `papers.ts` | `upsertPaper`, `upsertCitation`, `ensurePaperStub` (FK ordering). |
+| `relations.ts` | Persist/read cross-paper relations (reference/citation/related/coupling). |
+| `routes/neighbors.ts` | `GET /api/neighbors/:id`: stored relations + paper rows. |
 | `graph.ts` | BFS crawl batcher (references + citations + recommendations/OpenAlex related), bibliographic coupling, `pagerank` + `connectedComponents`. |
 | `identity.ts` | Canonical work ids (DOI > arXiv > provider id) + duplicate merging. |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
@@ -352,6 +354,17 @@ dropping self-loops and deduping edges by `from|to|type`. Node ids stay S2
 paperIds so the `papers`/`citations` schema and routes are unchanged. Both caches
 are invalidated by bumping `graphVersion` (server) / `NETWORK_GRAPH_VERSION`
 (client).
+
+### 20. Global relation persistence
+
+`paper_relations(from_id, to_id, type, weight, source, updated_at)` (PK
+`from,to,type`) stores every edge a build produces — reference/citation/related/
+coupling — with a `source` tag (`s2` / `related` / `local`). `buildNetwork`
+writes the merged edge list via `relations.ts:persistRelations` (best-effort), so
+edges survive across sessions and future graphs can reuse them.
+`GET /api/neighbors/:id` returns the stored relations touching an id plus the
+`papers` rows for the involved ids; this is the read side that lazy expansion
+(sub-project 4) consumes instead of re-crawling.
 
 ## Data model
 

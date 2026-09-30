@@ -8,6 +8,7 @@ import { jobRoute } from './routes/jobs'
 import { translateRoute } from './routes/translate'
 import { llmStatusRoute } from './routes/llm'
 import { aiRoute } from './routes/ai'
+import { neighborsRoute } from './routes/neighbors'
 
 const WEB_DIST = new URL('../academic-paper-explorer/dist', import.meta.url).pathname
 
@@ -37,6 +38,7 @@ const server = Bun.serve({
       if (p === '/api/ai' && req.method === 'POST') return await aiRoute(req)
       if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
       if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
+      if (p.startsWith('/api/neighbors/') && req.method === 'GET') return await neighborsRoute(p.split('/').pop()!)
       if (p.startsWith('/api/')) throw new ApiError('VALIDATION_FAILED', `未知接口: ${p}`, 404)
       return await serveStatic(p)
     } catch (e) {
