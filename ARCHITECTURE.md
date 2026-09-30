@@ -70,6 +70,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `normalize.ts` | Shared S2 paper shape so search and details responses agree. |
 | `papers.ts` | `upsertPaper`, `upsertCitation`, `ensurePaperStub` (FK ordering). |
 | `relations.ts` | Persist/read cross-paper relations (reference/citation/related/coupling). |
+| `embeddings.ts` | SPECTER2 vector cache (SQLite) + cosine kNN semantic edges. |
 | `routes/neighbors.ts` | `GET /api/neighbors/:id`: stored relations + paper rows. |
 | `graph.ts` | BFS crawl batcher (references + citations + recommendations/OpenAlex related), bibliographic coupling, `pagerank` + `connectedComponents`. |
 | `identity.ts` | Canonical work ids (DOI > arXiv > provider id) + duplicate merging. |
@@ -389,6 +390,21 @@ budget fills with the most relevant neighbours available at selection time. The
 recommendation ids are fetched once per build (`safeRecommendationIds`) and
 reused by `addRelatedNodes`. `graphVersion` / `NETWORK_GRAPH_VERSION` were bumped
 to 4 to invalidate caches built with the old ordering.
+
+### 23. Semantic neighbours (SPECTER2) + arXiv OpenAlex fallback
+
+`paper_embeddings(id, model, vector, updated_at)` caches S2 SPECTER2 vectors
+(`s2.ts:getEmbeddingsBatch`, single attempt — the endpoint is heavily
+rate-limited). `buildNetwork` calls `addSemanticEdges` after merging: it reads
+cached vectors for the node set, fetches a small batch of the missing ones
+(best-effort, failures ignored), then `embeddings.ts:semanticNeighborEdges`
+computes each node's top-k cosine neighbours above `embeddingMinSim` and adds
+`semantic` edges (weight = similarity). The cache grows across builds, so
+semantic coverage improves over time without hammering the API. Separately,
+OpenAlex relatedness now falls back to a title search
+(`getRelatedWorksForPaper`) because arXiv DOIs (`10.48550/arxiv.*`) 404 in
+OpenAlex. Edge types are `reference | citation | related | coupling | semantic`
+(coloured in `EDGE_COLORS`); `graphVersion`/`NETWORK_GRAPH_VERSION` bumped to 5.
 
 ## Data model
 

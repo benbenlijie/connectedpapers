@@ -91,3 +91,34 @@ export async function getRelatedWorksByDoi(doi: string, limit: number): Promise<
   const work = await fetchWork(`${config.openalex.base}/works/doi:${encodeURIComponent(doi)}?select=${RELATED_SELECT}&mailto=${mailto()}`)
   return work ? relatedFrom(work, limit) : []
 }
+
+export function buildWorkByDoiUrl(doi: string): string {
+  return `${config.openalex.base}/works/doi:${encodeURIComponent(doi)}?select=${RELATED_SELECT}&mailto=${mailto()}`
+}
+
+export function buildWorkSearchByTitleUrl(title: string): string {
+  return `${config.openalex.base}/works?search=${encodeURIComponent(title)}&per_page=1&select=${RELATED_SELECT}&mailto=${mailto()}`
+}
+
+/**
+ * Related works with an arXiv fallback: try the DOI, else search by title
+ * (arXiv DOIs like 10.48550/arxiv.* 404 in OpenAlex). Best-effort.
+ */
+export async function getRelatedWorksForPaper(input: {
+  doi?: string | null
+  title?: string
+  limit: number
+}): Promise<any[]> {
+  if (input.doi) {
+    const work = await fetchWork(buildWorkByDoiUrl(input.doi))
+    if (work && Array.isArray(work.related_works) && work.related_works.length) {
+      return relatedFrom(work, input.limit)
+    }
+  }
+  if (input.title) {
+    const body = await fetchWork(buildWorkSearchByTitleUrl(input.title))
+    const first = body?.results?.[0]
+    if (first) return relatedFrom(first, input.limit)
+  }
+  return []
+}

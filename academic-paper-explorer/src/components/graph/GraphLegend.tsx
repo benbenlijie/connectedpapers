@@ -66,6 +66,10 @@ const GraphLegend: React.FC<Props> = ({ nodes }) => {
           <span className="h-0.5 w-4" style={{ background: EDGE_COLORS.coupling }} />
           <span>文献耦合</span>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="h-0.5 w-4" style={{ background: EDGE_COLORS.semantic }} />
+          <span>语义相近</span>
+        </div>
       </div>
     </div>
   )

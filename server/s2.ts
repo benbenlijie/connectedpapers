@@ -78,3 +78,22 @@ export function getRecommendations(s2Path: string): Promise<any> {
 export function getCitationContexts(s2Path: string): Promise<any> {
   return getJson(`${config.s2.base}/paper/${encodeURIComponent(s2Path)}/citations?fields=contexts,citingPaper.paperId,citingPaper.title,citingPaper.year,isInfluential&limit=20`)
 }
+
+/** SPECTER2 embeddings for up to 500 ids (single attempt; rate limits are common). */
+export async function getEmbeddingsBatch(s2Paths: string[]): Promise<Map<string, number[]>> {
+  const out = new Map<string, number[]>()
+  if (!s2Paths.length) return out
+  const res = await fetch(`${config.s2.base}/paper/batch?fields=embedding.specter_v2`, {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: s2Paths }),
+    signal: AbortSignal.timeout(20000),
+  })
+  if (!res.ok) throw Object.assign(new Error(`S2 embeddings ${res.status}`), { status: res.status })
+  const data = (await res.json()) as Array<{ embedding?: { vector?: number[] } } | null>
+  data.forEach((p, i) => {
+    const vector = p?.embedding?.vector
+    if (Array.isArray(vector) && vector.length) out.set(s2Paths[i], vector)
+  })
+  return out
+}
