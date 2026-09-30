@@ -418,14 +418,26 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     ctx.fill()
   }, [])
 
+  const clusterById = useMemo(
+    () => new Map(graphData.nodes.map((n) => [n.id, n.clusterId])),
+    [graphData],
+  )
+
   const linkColor = useCallback(
     (link: GraphLink) => {
       const base = EDGE_COLORS[link.type] ?? EDGE_COLORS.reference
-      if (!activeId) return withAlpha(base, 0.35)
+      if (!activeId) {
+        // When colouring by community, fade edges that cross communities.
+        if (colorMode === 'cluster') {
+          const same = clusterById.get(linkEndId(link.source)) === clusterById.get(linkEndId(link.target))
+          return withAlpha(base, same ? 0.4 : 0.1)
+        }
+        return withAlpha(base, 0.35)
+      }
       const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
       return linkKeys.has(key) ? base : withAlpha(base, 0.06)
     },
-    [activeId, linkKeys],
+    [activeId, linkKeys, colorMode, clusterById],
   )
 
   const nodeColor = useCallback(

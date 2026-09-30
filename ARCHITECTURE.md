@@ -74,6 +74,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `routes/neighbors.ts` | `GET /api/neighbors/:id`: stored relations + paper rows. |
 | `graph.ts` | BFS crawl batcher (references + citations + recommendations/OpenAlex related), bibliographic coupling, `pagerank` + `connectedComponents`. |
 | `identity.ts` | Canonical work ids (DOI > arXiv > provider id) + duplicate merging. |
+| `community.ts` | Louvain community detection (pure). |
 | `jobs.ts` | In-process job queue, cache lookup, cache write, boot recovery. |
 | `llm.ts` | Configurable LLM providers (`LLM_PROVIDERS`), `chat` against OpenAI-compatible endpoints. |
 | `ai.ts` | Pure AI prompt construction (`explain`/`summarize`/`ask`). |
@@ -405,6 +406,16 @@ OpenAlex relatedness now falls back to a title search
 (`getRelatedWorksForPaper`) because arXiv DOIs (`10.48550/arxiv.*`) 404 in
 OpenAlex. Edge types are `reference | citation | related | coupling | semantic`
 (coloured in `EDGE_COLORS`); `graphVersion`/`NETWORK_GRAPH_VERSION` bumped to 5.
+
+### 24. Community detection (Louvain)
+
+`community.ts:louvain` runs Louvain modularity local-moving (single level, good
+for ≤300 nodes) over the weighted, undirected edge set and returns normalized
+community ids. `buildNetwork` uses it for `clusterId` (replacing the plain
+connected-component id, whose function remains exported), so cluster colouring
+now reflects real communities. When the graph is coloured by cluster,
+`NetworkGraph` fades edges that cross communities so they read as inter-cluster
+links. `graphVersion`/`NETWORK_GRAPH_VERSION` bumped to 6.
 
 ## Data model
 

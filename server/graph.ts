@@ -2,6 +2,7 @@ import { getPapersBatch, getRecommendations, getEmbeddingsBatch, type S2Paper } 
 import { getRelatedWorksForPaper } from './openalex'
 import { canonicalKeyFromS2, mergeDuplicates, normalizeDoi } from './identity'
 import { getEmbeddings, semanticNeighborEdges, upsertEmbedding } from './embeddings'
+import { louvain } from './community'
 import { config } from './config'
 import { upsertPaper, upsertCitation, ensurePaperStub } from './papers'
 import { persistRelations } from './relations'
@@ -267,10 +268,13 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
   }
 
   const pr = pagerank(nodeList, edgeList)
-  const comps = connectedComponents(nodeList, edgeList)
+  const communities = louvain(
+    nodeList.map((n) => n.id),
+    edgeList.map((e) => ({ from: e.from, to: e.to, weight: e.weight })),
+  )
   for (const node of nodeList) {
     node.pageRankScore = pr.get(node.id) ?? 0
-    node.clusterId = comps.get(node.id) ?? 0
+    node.clusterId = communities.get(node.id) ?? 0
     node.size = Math.max(15, node.pageRankScore * 1000)
   }
   return { nodes: nodeList, edges: edgeList }
