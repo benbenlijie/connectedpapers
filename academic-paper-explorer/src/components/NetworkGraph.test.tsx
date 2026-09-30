@@ -1,6 +1,8 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+
+vi.mock('../services/api', () => ({ api: { networkWithPolling: vi.fn() } }))
 
 vi.mock('react-force-graph-2d', () => ({
   default: (props: any) => (
@@ -56,9 +58,11 @@ vi.mock('../hooks/usePaperNetwork', () => ({
 
 import NetworkGraph from './NetworkGraph'
 import { useUiStore } from '../store/useUiStore'
+import { api } from '../services/api'
 
 beforeEach(() => {
   mockState = { data: NETWORK, isLoading: false, error: null }
+  ;(api.networkWithPolling as ReturnType<typeof vi.fn>).mockReset()
   useUiStore.setState({
     selectedPaper: null,
     selectedNodeId: null,
@@ -142,5 +146,18 @@ describe('NetworkGraph', () => {
     fireEvent.click(screen.getByTestId('node-a-rightclick'))
     fireEvent.click(screen.getByRole('menuitem', { name: '按标题搜索' }))
     expect(useUiStore.getState().submittedQuery).toEqual({ query: 'A', query_type: 'keyword' })
+  })
+
+  it('expands a node and merges its neighbors into the graph', async () => {
+    ;(api.networkWithPolling as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nodes: [
+        { id: 'z', label: 'Z', title: 'Z', citationCount: 0, authors: '', isRoot: false, pageRankScore: 0, clusterId: 0, size: 1, color: '#fff', year: 2005 },
+      ],
+      edges: [{ from: 'a', to: 'z', type: 'reference', weight: 1 }],
+    })
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '展开该节点' }))
+    await waitFor(() => expect(screen.getByText(/3 节点/)).toBeInTheDocument())
   })
 })

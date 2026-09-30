@@ -119,6 +119,7 @@ four `/api/*` routes, falls back to static files for everything else (rejecting
 | `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
 | `lib/searchHistory.ts` | Pure recent-query list helpers (parse/add/remove/filter). |
 | `lib/networkCache.ts` | Pure + localStorage cache of built networks and node positions. |
+| `lib/graphMerge.ts` | Pure union of two graphs (nodes by id, edges by from|to|type). |
 
 ## Key design decisions
 
@@ -365,6 +366,17 @@ edges survive across sessions and future graphs can reuse them.
 `GET /api/neighbors/:id` returns the stored relations touching an id plus the
 `papers` rows for the involved ids; this is the read side that lazy expansion
 (sub-project 4) consumes instead of re-crawling.
+
+### 21. Lazy node expansion
+
+Instead of crawling everything up front, right-clicking a node offers
+**展开该节点**: `NetworkGraph` calls `api.networkWithPolling(nodeId, 1, 50)` and
+merges the result into a local `extra` graph via `lib/graphMerge.ts`
+(`mergeNetworkData` unions nodes by id and edges by `from|to|type`, keeping the
+max weight). `extra` resets when the root/params change; filtering and encoding
+run over `mergeNetworkData(networkData, extra)`, so expanded neighbours appear
+immediately and the server-side cache persists the relations for next time. A
+`展开中…` label reflects the in-flight request.
 
 ## Data model
 
