@@ -21,7 +21,11 @@ interface AiChatStore {
 
 function loadSessions(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(AI_CHAT_STORAGE_KEY) ?? '{}') as Record<string, string>
+    const parsed = JSON.parse(localStorage.getItem(AI_CHAT_STORAGE_KEY) ?? '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>
+    }
+    return {}
   } catch {
     return {}
   }

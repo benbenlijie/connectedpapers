@@ -76,6 +76,8 @@ export class OpencodeManager {
   private proc: ReturnType<typeof Bun.spawn> | null = null
   private ready = false
   private ownsDir = false
+  private stopped = false
+  private restartAttempt = 0
 
   constructor(private opts: OpencodeManagerOptions) {}
 
@@ -93,7 +95,7 @@ export class OpencodeManager {
     if (provider.kind === 'openai' && !provider.baseUrl) throw new Error('provider missing baseUrl')
 
     const toolsDir = join(this.opts.runtimeDir, '.opencode', 'tools')
-    mkdirSync(toolsDir, { recursive: true })
+    mkdirSync(toolsDir, { recursive: true, mode: 0o700 })
     this.ownsDir = true
     writeFileSync(join(this.opts.runtimeDir, 'opencode.json'), buildOpencodeConfig(provider, config.ai.maxSteps), {
       mode: 0o600,
@@ -109,9 +111,9 @@ export class OpencodeManager {
     const dataHome = join(this.opts.runtimeDir, 'data')
     const cacheHome = join(this.opts.runtimeDir, 'cache')
     const stateHome = join(this.opts.runtimeDir, 'state')
-    for (const dir of [configHome, dataHome, cacheHome, stateHome]) mkdirSync(dir, { recursive: true })
+    for (const dir of [configHome, dataHome, cacheHome, stateHome]) mkdirSync(dir, { recursive: true, mode: 0o700 })
 
-    this.proc = Bun.spawn(
+    const proc = Bun.spawn(
       [config.ai.bin, 'serve', '--hostname', '127.0.0.1', '--port', String(this.opts.port)],
       {
         cwd: this.opts.runtimeDir,
@@ -128,16 +130,37 @@ export class OpencodeManager {
         stderr: 'inherit',
       },
     )
+    this.proc = proc
 
     const deadline = Date.now() + 15000
     while (Date.now() < deadline) {
       if (await this.ping()) {
         this.ready = true
+        this.restartAttempt = 0
+        void proc.exited.then(() => this.onExit())
         return
       }
       await Bun.sleep(250)
     }
+    proc.kill()
+    this.proc = null
     throw new Error('opencode server did not become healthy')
+  }
+
+  private onExit(): void {
+    this.ready = false
+    if (this.stopped || !this.proc) return
+    const attempt = this.restartAttempt++
+    const delay = Math.min(30_000, 500 * 2 ** attempt)
+    void (async () => {
+      await Bun.sleep(delay)
+      if (this.stopped) return
+      try {
+        await this.start()
+      } catch (e) {
+        console.error('[opencode] restart failed:', e)
+      }
+    })()
   }
 
   private async ping(): Promise<boolean> {
@@ -150,6 +173,7 @@ export class OpencodeManager {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true
     this.ready = false
     if (this.proc) {
       this.proc.kill()

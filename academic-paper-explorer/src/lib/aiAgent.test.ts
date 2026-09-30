@@ -25,10 +25,11 @@ describe('api calls', () => {
     expect(await ensureSession('2401.00001')).toBe('s1')
   })
 
-  it('sendMessage posts the payload', async () => {
-    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ data: { ok: true } })))
+  it('sendMessage posts the payload and returns the sessionId', async () => {
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ data: { ok: true, sessionId: 's1' } })))
     vi.stubGlobal('fetch', spy)
-    await sendMessage({ sessionId: 's1', message: 'q', excerpt: 'e', target: 'zh' })
+    const out = await sendMessage({ sessionId: 's1', message: 'q', excerpt: 'e', target: 'zh' })
+    expect(out).toEqual({ sessionId: 's1' })
     const body = JSON.parse(spy.mock.calls[0][1]?.body as string)
     expect(body).toMatchObject({ sessionId: 's1', message: 'q', excerpt: 'e', target: 'zh' })
   })

@@ -56,6 +56,21 @@ test('session.idle becomes done and session.error becomes error', () => {
   expect(err).toEqual({ type: 'error', message: 'boom' })
 })
 
+test('bare session.idle with no sessionID still yields done', () => {
+  expect(normalizeOpencodeEvent(SID, { type: 'session.idle', properties: {} })).toEqual({ type: 'done' })
+})
+
+test('numeric tool input is stringified for the detail', () => {
+  const out = normalizeOpencodeEvent(SID, {
+    type: 'message.part.updated',
+    properties: {
+      sessionID: SID,
+      part: { type: 'tool', tool: 'paper_section', state: { status: 'running', input: { idx: 3 } } },
+    },
+  })
+  expect(out).toMatchObject({ type: 'tool', status: 'start', detail: '3' })
+})
+
 test('serializeClientEvent produces an SSE frame', () => {
   expect(serializeClientEvent({ type: 'done' })).toBe('data: {"type":"done"}\n\n')
 })

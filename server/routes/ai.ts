@@ -1,20 +1,15 @@
 import type { Database } from 'bun:sqlite'
 import { readJson, json, ApiError } from '../errors'
 import { loadProviders } from '../llm'
-import { getSession, setSession } from '../ai-sessions'
+import { getArxivBySession, getSession, setSession } from '../ai-sessions'
 import { OPENCODE_AGENT } from '../opencode-config'
 import { normalizeOpencodeEvent, serializeClientEvent } from '../ai-events'
 import type { OpencodeClient } from '../opencode'
 
-function firstOpenaiProvider(requested?: string) {
-  const usable = loadProviders().filter((p) => p.kind === 'openai')
-  if (requested) {
-    const found = usable.find((p) => p.name === requested)
-    if (!found) throw new ApiError('LLM_UNAVAILABLE', `provider ${requested} 不可用`, 503)
-    return found
-  }
-  if (!usable[0]) throw new ApiError('LLM_UNAVAILABLE', '未配置可用的 AI provider', 503)
-  return usable[0]
+function firstOpenaiProvider() {
+  const provider = loadProviders().find((p) => p.kind === 'openai')
+  if (!provider) throw new ApiError('LLM_UNAVAILABLE', '未配置可用的 AI provider', 503)
+  return provider
 }
 
 export async function aiSessionRoute(req: Request, db: Database, client: OpencodeClient): Promise<Response> {
@@ -29,13 +24,13 @@ export async function aiSessionRoute(req: Request, db: Database, client: Opencod
   return json({ data: { sessionId } })
 }
 
-export async function aiChatRoute(req: Request, client: OpencodeClient): Promise<Response> {
-  const body = await readJson<{ sessionId?: string; message?: string; excerpt?: string; target?: string; provider?: string }>(req)
+export async function aiChatRoute(req: Request, client: OpencodeClient, db: Database): Promise<Response> {
+  const body = await readJson<{ sessionId?: string; message?: string; excerpt?: string; target?: string }>(req)
   const sessionId = body.sessionId?.trim()
   const message = body.message?.trim()
   if (!sessionId) throw new ApiError('VALIDATION_FAILED', 'sessionId 不能为空')
   if (!message) throw new ApiError('VALIDATION_FAILED', 'message 不能为空')
-  const provider = firstOpenaiProvider(body.provider)
+  const provider = firstOpenaiProvider()
   const target = (body.target ?? 'zh').trim() || 'zh'
   const excerpt = body.excerpt?.trim()
   const text = [
@@ -47,10 +42,19 @@ export async function aiChatRoute(req: Request, client: OpencodeClient): Promise
     .join('\n')
   try {
     await client.promptAsync(sessionId, OPENCODE_AGENT, provider.name, provider.model ?? '', text)
-  } catch (e) {
-    throw new ApiError('UPSTREAM_FAILED', (e as Error).message, 502)
+  } catch {
+    const arxivId = getArxivBySession(sessionId, db)
+    if (!arxivId) throw new ApiError('UPSTREAM_FAILED', `opencode prompt failed for ${sessionId}`, 502)
+    const newSessionId = await client.createSession(`paper:${arxivId}`)
+    setSession(arxivId, newSessionId, db)
+    try {
+      await client.promptAsync(newSessionId, OPENCODE_AGENT, provider.name, provider.model ?? '', text)
+    } catch (e) {
+      throw new ApiError('UPSTREAM_FAILED', (e as Error).message, 502)
+    }
+    return json({ data: { ok: true, sessionId: newSessionId } })
   }
-  return json({ data: { ok: true } })
+  return json({ data: { ok: true, sessionId } })
 }
 
 export async function aiHistoryRoute(req: Request, client: OpencodeClient): Promise<Response> {
@@ -77,12 +81,15 @@ export async function aiStreamRoute(req: Request, client: OpencodeClient, sessio
   }
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
+  const controller = new AbortController()
+  req.signal.addEventListener('abort', () => controller.abort())
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    async start(streamController) {
       const reader = upstream.body!.getReader()
+      controller.signal.addEventListener('abort', () => void reader.cancel().catch(() => {}), { once: true })
       let buffer = ''
       try {
-        while (true) {
+        while (!controller.signal.aborted) {
           const { done, value } = await reader.read()
           if (done) break
           buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n')
@@ -98,11 +105,16 @@ export async function aiStreamRoute(req: Request, client: OpencodeClient, sessio
               continue
             }
             const event = normalizeOpencodeEvent(sessionId, parsed as { type?: string; properties?: Record<string, unknown> })
-            if (event) controller.enqueue(encoder.encode(serializeClientEvent(event)))
+            if (event) streamController.enqueue(encoder.encode(serializeClientEvent(event)))
           }
         }
       } finally {
-        controller.close()
+        await reader.cancel().catch(() => {})
+        try {
+          streamController.close()
+        } catch {
+          // stream already closed (client disconnected)
+        }
       }
     },
   })

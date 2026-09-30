@@ -22,6 +22,17 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
   const applyEvent = useAiChatStore((s) => s.applyEvent)
   const unsubRef = useRef<(() => void) | null>(null)
 
+  const reloadHistory = useCallback(
+    async (id: string) => {
+      const history = await fetchHistory(id)
+      setHistory(
+        arxivId,
+        history.map((m, i) => ({ id: `h-${i}`, role: m.role, text: m.text, tools: [] })),
+      )
+    },
+    [arxivId, setHistory],
+  )
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -29,13 +40,8 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
         const id = await ensureSession(arxivId)
         if (cancelled) return
         setSession(arxivId, id)
-        const history = await fetchHistory(id)
-        if (!cancelled && history.length > 0) {
-          setHistory(
-            arxivId,
-            history.map((m, i) => ({ id: `h-${i}`, role: m.role, text: m.text, tools: [] })),
-          )
-        }
+        await reloadHistory(id)
+        if (cancelled) return
         setReady(true)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '初始化失败')
@@ -44,7 +50,7 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
     return () => {
       cancelled = true
     }
-  }, [arxivId, setSession, setHistory])
+  }, [arxivId, setSession, reloadHistory])
 
   useEffect(() => () => unsubRef.current?.(), [])
 
@@ -55,16 +61,24 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
     setError(null)
     beginTurn(arxivId, text)
     unsubRef.current?.()
-    unsubRef.current = streamEvents(sessionId, (event) => applyEvent(arxivId, event), (e) =>
-      setError(e instanceof Error ? e.message : '事件流断开'),
+    unsubRef.current = streamEvents(
+      sessionId,
+      (event) => applyEvent(arxivId, event),
+      (e) => {
+        setError(e instanceof Error ? e.message : '事件流断开')
+        void reloadHistory(sessionId)
+      },
     )
     try {
-      await sendMessage({ sessionId, message: text, excerpt: selection || undefined, target })
+      const returned = await sendMessage({ sessionId, message: text, excerpt: selection || undefined, target })
+      if (returned.sessionId !== sessionId) setSession(arxivId, returned.sessionId)
     } catch (e) {
+      unsubRef.current?.()
+      unsubRef.current = null
       setError(e instanceof Error ? e.message : '发送失败')
       applyEvent(arxivId, { type: 'error', message: e instanceof Error ? e.message : '发送失败' })
     }
-  }, [input, sessionId, arxivId, selection, target, beginTurn, applyEvent])
+  }, [input, sessionId, arxivId, selection, target, beginTurn, applyEvent, setSession, reloadHistory])
 
   const stop = useCallback(() => {
     if (sessionId) void abortSession(sessionId)
