@@ -72,6 +72,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     graphQuery,
     graphDepth,
     graphMaxNodes,
+    hiddenEdgeTypes,
   } = useUiStore()
 
   const isCompare = slot === 'compare'
@@ -134,14 +135,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   )
 
   const { nodes: filteredNodes, edges: filteredEdges } = useMemo(() => {
-    return filterGraph(combined.nodes, combined.edges, {
+    const { nodes, edges } = filterGraph(combined.nodes, combined.edges, {
       yearRange: filters.yearRange,
       minCitations: filters.minCitations,
       selectedFields: filters.selectedFields,
       selectedVenues: filters.selectedVenues,
       timelineYear,
     })
-  }, [combined, filters, timelineYear])
+    return { nodes, edges: edges.filter((e) => !hiddenEdgeTypes.includes(e.type)) }
+  }, [combined, filters, timelineYear, hiddenEdgeTypes])
 
   // Year domain for the timeline slider: everything except the timeline filter,
   // otherwise the slider range collapses while dragging (feedback loop).

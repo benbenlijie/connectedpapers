@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Paper } from '../types/domain'
+import type { Paper, EdgeType } from '../types/domain'
 import type { ColorMode, SizeMode } from '../graph/encoding'
 
 interface UiState {
@@ -21,6 +21,7 @@ interface UiState {
   graphQuery: string
   graphDepth: number | null
   graphMaxNodes: number | null
+  hiddenEdgeTypes: EdgeType[]
   comparePaper: Paper | null
   compareSelectedNodeId: string | null
   setSelectedPaper: (p: Paper | null) => void
@@ -39,6 +40,7 @@ interface UiState {
   setTimelinePlaying: (playing: boolean) => void
   setGraphQuery: (q: string) => void
   setGraphParams: (depth: number | null, maxNodes: number | null) => void
+  toggleEdgeType: (type: EdgeType) => void
 }
 
 const defaultFilters = {
@@ -62,6 +64,7 @@ export const useUiStore = create<UiState>((set) => ({
   graphQuery: '',
   graphDepth: null,
   graphMaxNodes: null,
+  hiddenEdgeTypes: [],
   comparePaper: null,
   compareSelectedNodeId: null,
   setSelectedPaper: (p) => set({ selectedPaper: p }),
@@ -80,4 +83,10 @@ export const useUiStore = create<UiState>((set) => ({
   setTimelinePlaying: (playing) => set({ timelinePlaying: playing }),
   setGraphQuery: (q) => set({ graphQuery: q }),
   setGraphParams: (depth, maxNodes) => set({ graphDepth: depth, graphMaxNodes: maxNodes }),
+  toggleEdgeType: (type) =>
+    set((s) => ({
+      hiddenEdgeTypes: s.hiddenEdgeTypes.includes(type)
+        ? s.hiddenEdgeTypes.filter((t) => t !== type)
+        : [...s.hiddenEdgeTypes, type],
+    })),
 }))
