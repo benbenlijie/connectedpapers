@@ -111,6 +111,37 @@ export function bibliographicCoupling(refsByNode: Map<string, Set<string>>, minS
   return out
 }
 
+export interface CandidateStats {
+  links: number
+  citationCount?: number
+  year?: number
+}
+
+/** Relevance heuristic for a candidate neighbour (higher = more relevant). */
+export function scoreCandidate(input: CandidateStats, rootYear?: number): number {
+  const links = input.links * 3
+  const cites = Math.log10((input.citationCount ?? 0) + 1)
+  const yearBonus =
+    input.year && rootYear ? Math.max(0, 1 - Math.abs(input.year - rootYear) / 20) : 0
+  return links + cites + yearBonus
+}
+
+/** Order candidate ids: recommended-for-root first, then by relevance score. */
+export function rankCandidates(
+  stats: Map<string, CandidateStats>,
+  priorityIds: Set<string>,
+  rootYear?: number,
+): string[] {
+  return [...stats.entries()]
+    .sort((a, b) => {
+      const pa = priorityIds.has(a[0]) ? 1 : 0
+      const pb = priorityIds.has(b[0]) ? 1 : 0
+      if (pa !== pb) return pb - pa
+      return scoreCandidate(b[1], rootYear) - scoreCandidate(a[1], rootYear)
+    })
+    .map(([id]) => id)
+}
+
 function openAlexNode(w: any, depth: number): GraphNode {
   const authors = (w?.authorships ?? [])
     .map((a: any) => a?.author?.display_name)
@@ -149,11 +180,20 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
   let frontier = [root]
   let level = 0
   const started = Date.now()
+  const recommendedIds = await safeRecommendationIds(root.paperId)
+  const priorityIds = new Set(recommendedIds)
 
   while (frontier.length && nodes.size < maxNodes && level < depth) {
     if (Date.now() - started > config.crawl.maxExecutionMs) break
-    const refIds: string[] = []
-    const citeIds: string[] = []
+    const stats = new Map<string, CandidateStats>()
+    const note = (id: string, year?: number, citationCount?: number) => {
+      if (seen.has(id)) return
+      const s = stats.get(id) ?? { links: 0 }
+      s.links += 1
+      if (year != null && s.year == null) s.year = year
+      if (citationCount != null) s.citationCount = Math.max(s.citationCount ?? 0, citationCount)
+      stats.set(id, s)
+    }
     const refLimit = config.crawl.refLimit[Math.min(level, 3)]
     const citeLimit = config.crawl.citeLimit[Math.min(level, 3)]
 
@@ -168,7 +208,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
           ensurePaperStub(r.paperId)
           upsertCitation(paper.paperId, r.paperId)
         }
-        if (!seen.has(r.paperId) && refIds.length + citeIds.length < maxNodes) refIds.push(r.paperId)
+        note(r.paperId, r.year, r.citationCount)
       }
       if (citeLimit > 0) {
         for (const c of (paper.citations ?? []).slice(0, citeLimit)) {
@@ -177,12 +217,12 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
             ensurePaperStub(c.paperId)
             upsertCitation(c.paperId, paper.paperId)
           }
-          if (!seen.has(c.paperId) && refIds.length + citeIds.length < maxNodes) citeIds.push(c.paperId)
+          note(c.paperId, c.year)
         }
       }
     }
 
-    const wanted = [...new Set([...refIds, ...citeIds])].filter((id) => !seen.has(id)).slice(0, config.crawl.s2BatchSize)
+    const wanted = rankCandidates(stats, priorityIds, root.year).slice(0, config.crawl.s2BatchSize)
     if (!wanted.length) break
 
     const fetched = await getPapersBatch(wanted)
@@ -203,7 +243,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     }
   }
 
-  await addRelatedNodes(root, nodes, edges, seen, canonicalOf, maxNodes)
+  await addRelatedNodes(root, nodes, edges, seen, canonicalOf, maxNodes, recommendedIds)
 
   if (config.related.couplingMin > 0) {
     edges.push(...bibliographicCoupling(refsByNode, config.related.couplingMin))
@@ -230,6 +270,17 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
 }
 
 /** Add `related` neighbours from S2 recommendations and OpenAlex (best-effort). */
+async function safeRecommendationIds(s2Path: string): Promise<string[]> {
+  try {
+    const rec = await getRecommendations(s2Path)
+    return (rec?.recommendedPapers ?? [])
+      .map((r: { paperId?: string }) => r?.paperId)
+      .filter((id: unknown): id is string => Boolean(id))
+  } catch {
+    return []
+  }
+}
+
 async function addRelatedNodes(
   root: S2Paper,
   nodes: Map<string, GraphNode>,
@@ -237,16 +288,12 @@ async function addRelatedNodes(
   seen: Set<string>,
   canonicalOf: Map<string, string>,
   maxNodes: number,
+  recommendedIds: string[],
 ): Promise<void> {
   const relatedIds: string[] = []
-  try {
-    const rec = await getRecommendations(root.paperId)
-    for (const r of rec?.recommendedPapers ?? []) {
-      if (r?.paperId && !seen.has(r.paperId)) relatedIds.push(r.paperId)
-      if (relatedIds.length >= config.related.recommendLimit) break
-    }
-  } catch {
-    // best-effort
+  for (const id of recommendedIds) {
+    if (!seen.has(id)) relatedIds.push(id)
+    if (relatedIds.length >= config.related.recommendLimit) break
   }
 
   const s2Budget = Math.max(0, Math.min(config.related.relatedNodeBudget, maxNodes - nodes.size))
