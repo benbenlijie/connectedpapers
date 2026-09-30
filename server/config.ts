@@ -40,6 +40,9 @@ export const config = {
   arxiv: { base: 'http://export.arxiv.org/api' },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',
+    // When set, do NOT spawn opencode locally; connect to this base URL instead
+    // (e.g. a locally-run opencode exposed over a reverse SSH tunnel).
+    externalBaseUrl: Bun.env.OPENCODE_BASE_URL?.replace(/\/+$/, '') ?? '',
     bin: Bun.env.OPENCODE_BIN ?? 'opencode',
     port: num(Bun.env.OPENCODE_PORT, 4096),
     maxSteps: num(Bun.env.AI_MAX_STEPS, 8),

@@ -54,6 +54,31 @@ PORT=9000 bun run server
 - 健康检查：opencode 不可用（未安装、`OPENCODE_ENABLED=0` 或未配置 provider）时，`POST /api/ai/session` 返回 `503`；翻译功能不受影响。
 - 运行时隔离在 `data/opencode-runtime/`（已随 `data/` 忽略），可安全删除；服务重启会重建。
 
+### AI 助手：外部 opencode 模式（本机跑 opencode，服务器只连接）
+
+如果部署机不值得/不方便常驻 opencode（例如 2GB 小机器），可以让 opencode 跑在你的本机，服务器通过反向 SSH 隧道连接：
+
+**服务器 `server/.env`**
+```env
+OPENCODE_BASE_URL=http://127.0.0.1:4096   # 不再本地 spawn，连接隧道里的本机 opencode
+INTERNAL_TOKEN=一段足够长的随机串          # 与下面的本机 runner 必须一致
+```
+
+**本机**（opencode 与工具回调在服务器侧执行；工具抓正文时回调服务器公网 API）
+```bash
+# 1) 常驻运行本机 opencode（独立 runtime，端口 4097，避免和本地开发冲突）
+OPENCODE_PORT=4097 \
+PAPER_API_BASE=https://watchdeep.net/papers/api \
+INTERNAL_TOKEN=<与服务器一致> \
+bun --env-file=server/.env run scripts/opencode-local.ts
+
+# 2) 反向隧道：把本机 4097 暴露到服务器的 127.0.0.1:4096（仅 loopback）
+autossh -M 0 -N -T -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes -R 127.0.0.1:4096:127.0.0.1:4097 webserver
+```
+
+建议用 systemd user 服务常驻这两条（参考 `connectedpapers-mtcode-tunnel.service`）。若本机关机/断网，AI 助手不可用，翻译不受影响。
+
 ## 4. 常驻运行（可选）
 
 ### nohup

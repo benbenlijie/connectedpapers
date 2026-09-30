@@ -129,7 +129,7 @@ export class OpencodeManager {
           XDG_DATA_HOME: dataHome,
           XDG_CACHE_HOME: cacheHome,
           XDG_STATE_HOME: stateHome,
-          PAPER_API_BASE: `http://127.0.0.1:${config.server.port}/api`,
+          PAPER_API_BASE: Bun.env.PAPER_API_BASE ?? `http://127.0.0.1:${config.server.port}/api`,
           PAPER_INTERNAL_TOKEN: INTERNAL_TOKEN,
         },
         stdout: 'inherit',
