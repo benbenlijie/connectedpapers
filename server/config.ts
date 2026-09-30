@@ -38,6 +38,14 @@ export const config = {
     embeddingMinSim: num(Bun.env.EMBEDDING_MIN_SIM, 0.8),
   },
   arxiv: { base: 'http://export.arxiv.org/api' },
+  ai: {
+    enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',
+    bin: Bun.env.OPENCODE_BIN ?? 'opencode',
+    port: num(Bun.env.OPENCODE_PORT, 4096),
+    maxSteps: num(Bun.env.AI_MAX_STEPS, 8),
+    contentTtlHours: num(Bun.env.PAPER_CONTENT_TTL_HOURS, 168),
+    promptTimeoutMs: num(Bun.env.AI_PROMPT_TIMEOUT_MS, 120000),
+  },
   llm: {
     translateTimeoutMs: num(Bun.env.TRANSLATE_TIMEOUT_MS, 120000),
     translateBatchChars: num(Bun.env.TRANSLATE_BATCH_CHARS, 4000),
