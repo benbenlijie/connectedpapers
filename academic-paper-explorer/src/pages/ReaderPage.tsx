@@ -27,9 +27,12 @@ import {
 import {
   collectBlocks,
   ensureTranslationStyle,
-  insertTranslation,
+  failPendingTranslations,
+  insertPlaceholder,
   markBlock,
   removeTranslations,
+  toggleTranslation,
+  updateTranslation,
   SOURCE_ATTR,
   TRANSLATION_ATTR,
 } from '../lib/readerBlocks'
@@ -42,7 +45,7 @@ const TARGETS: { value: string; label: string }[] = [
   { value: 'ja', label: '日本語' },
 ]
 
-const BATCH_SIZE = 15
+const BATCH_SIZE = 4
 
 const ReaderPage: React.FC = () => {
   const { arxivId } = useParams<{ arxivId: string }>()
@@ -157,7 +160,7 @@ const ReaderPage: React.FC = () => {
         return
       }
       const node = (e.target as Element | null)?.closest?.(`[${TRANSLATION_ATTR}]`) as HTMLElement | null
-      if (node) node.style.display = node.style.display === 'none' ? '' : 'none'
+      if (node) toggleTranslation(node)
     })
 
     doc.addEventListener('mouseup', () => {
@@ -252,7 +255,10 @@ const ReaderPage: React.FC = () => {
       setTranslateError(null)
       setProgress({ done: 0, total: blocks.length })
       ensureTranslationStyle(doc)
-      blocks.forEach((el, i) => markBlock(el, String(i)))
+      blocks.forEach((el, i) => {
+        markBlock(el, String(i))
+        insertPlaceholder(doc, el, String(i))
+      })
       cancelRef.current = false
       let done = 0
       try {
@@ -261,12 +267,14 @@ const ReaderPage: React.FC = () => {
           const texts = batch.map((el) => (el.textContent ?? '').trim())
           const result = await translate(texts, lang)
           if (cancelRef.current) break
-          batch.forEach((el, k) => insertTranslation(doc, el, markId(el), result.translations[k]))
+          batch.forEach((el, k) => updateTranslation(doc, markId(el), result.translations[k]))
           done += batch.length
           setProgress({ done, total: blocks.length })
         }
-        setTranslated(true)
+        if (cancelRef.current) failPendingTranslations(doc)
+        else setTranslated(true)
       } catch (e) {
+        failPendingTranslations(doc)
         setTranslateError(e instanceof Error ? e.message : '翻译失败')
       } finally {
         setTranslating(false)
