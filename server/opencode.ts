@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { config } from './config'
 import { loadProviders } from './llm'
@@ -7,6 +7,7 @@ import { INTERNAL_TOKEN } from './internal-token'
 
 export interface OpencodeClient {
   createSession(title: string): Promise<string>
+  sessionExists(sessionId: string): Promise<boolean>
   promptAsync(
     sessionId: string,
     agent: string,
@@ -46,6 +47,12 @@ export function createOpencodeClient(baseUrl: string, timeoutMs = 120000): Openc
       })
       if (!res.ok) throw new Error(`opencode promptAsync ${res.status}`)
     },
+    async sessionExists(sessionId) {
+      const res = await fetch(`${root}/session/${sessionId}`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      return res.ok
+    },
     async messages(sessionId) {
       const res = await fetch(`${root}/session/${sessionId}/message`, {
         signal: AbortSignal.timeout(timeoutMs),
@@ -75,7 +82,6 @@ export interface OpencodeManagerOptions {
 export class OpencodeManager {
   private proc: ReturnType<typeof Bun.spawn> | null = null
   private ready = false
-  private ownsDir = false
   private stopped = false
   private restartAttempt = 0
   private startedAt: number | null = null
@@ -97,7 +103,6 @@ export class OpencodeManager {
 
     const toolsDir = join(this.opts.runtimeDir, '.opencode', 'tools')
     mkdirSync(toolsDir, { recursive: true, mode: 0o700 })
-    this.ownsDir = true
     writeFileSync(join(this.opts.runtimeDir, 'opencode.json'), buildOpencodeConfig(provider, config.ai.maxSteps), {
       mode: 0o600,
     })
@@ -186,9 +191,7 @@ export class OpencodeManager {
       this.proc.kill()
       this.proc = null
     }
-    if (this.ownsDir) {
-      rmSync(this.opts.runtimeDir, { recursive: true, force: true })
-      this.ownsDir = false
-    }
+    // Keep the runtime dir: it holds opencode's session store, which the
+    // ai_sessions mapping depends on across restarts.
   }
 }

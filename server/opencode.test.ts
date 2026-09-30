@@ -38,6 +38,19 @@ test('promptAsync posts the agent, model and text part', async () => {
   expect(body.parts).toEqual([{ type: 'text', text: 'hello' }])
 })
 
+test('sessionExists GETs /session/:id and reflects the status', async () => {
+  const seen: string[] = []
+  let ok = true
+  globalThis.fetch = (async (u: string) => {
+    seen.push(String(u))
+    return new Response('', { status: ok ? 200 : 404 })
+  }) as unknown as typeof fetch
+  expect(await client().sessionExists('sess-9')).toBe(true)
+  expect(seen[0]).toBe('http://127.0.0.1:4096/session/sess-9')
+  ok = false
+  expect(await client().sessionExists('sess-9')).toBe(false)
+})
+
 test('messages and abort hit the right paths', async () => {
   const seen: string[] = []
   globalThis.fetch = (async (u: string) => {

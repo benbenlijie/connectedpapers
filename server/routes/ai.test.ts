@@ -21,14 +21,30 @@ test('aiSessionRoute creates and persists a session id', async () => {
   expect(getSession('2401.00001', db)).toBe('new-paper:2401.00001')
 })
 
-test('aiSessionRoute reuses an existing session', async () => {
+test('aiSessionRoute reuses an existing live session', async () => {
   const client = createOpencodeClient('http://oc')
   let created = 0
   ;(client.createSession as any) = async () => { created += 1; return 'x' }
+  ;(client.sessionExists as any) = async () => true
   const make = () => new Request('http://x/api/ai/session', { method: 'POST', body: JSON.stringify({ arxivId: 'p1' }) })
   await aiSessionRoute(make(), db, client)
   await aiSessionRoute(make(), db, client)
   expect(created).toBe(1)
+})
+
+test('aiSessionRoute recreates a session that no longer exists', async () => {
+  const client = createOpencodeClient('http://oc')
+  ;(client.sessionExists as any) = async () => false
+  ;(client.createSession as any) = async () => 'new-one'
+  setSession('2401.00009', 'gone', db)
+  const res = await aiSessionRoute(
+    new Request('http://x/api/ai/session', { method: 'POST', body: JSON.stringify({ arxivId: '2401.00009' }) }),
+    db,
+    client,
+  )
+  const body = (await res.json()) as any
+  expect(body.data.sessionId).toBe('new-one')
+  expect(getSession('2401.00009', db)).toBe('new-one')
 })
 
 test('aiChatRoute forwards the composed prompt to opencode', async () => {
