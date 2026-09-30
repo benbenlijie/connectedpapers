@@ -1,5 +1,18 @@
 import { config } from './config'
 import { withRetry } from './retry'
+import { createLimiter } from './rateLimit'
+
+const limiter = createLimiter(config.openalex.minIntervalMs)
+
+function keyed(url: string): string {
+  if (!config.openalex.apiKey) return url
+  return `${url}${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(config.openalex.apiKey)}`
+}
+
+/** Rate-limited, key-augmented OpenAlex fetch. */
+function oaFetch(url: string, init?: RequestInit): Promise<Response> {
+  return limiter(() => fetch(keyed(url), init))
+}
 
 const ua = () => `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`
 // OpenAlex “polite pool”：带上 mailto 可获更高、更稳定的限速。
@@ -15,7 +28,7 @@ export function buildWorkSearchUrl(query: string): string {
 /** 搜索 works。对 429/5xx 退避重试；重试耗尽后抛出（携带 status），由调用方决定降级。 */
 export function searchOpenAlex(query: string): Promise<any[]> {
   return withRetry(async () => {
-    const res = await fetch(buildWorkSearchUrl(query), {
+    const res = await oaFetch(buildWorkSearchUrl(query), {
       headers: { 'User-Agent': ua() },
       signal: AbortSignal.timeout(15000),
     })
@@ -25,7 +38,7 @@ export function searchOpenAlex(query: string): Promise<any[]> {
 }
 
 export async function getByDoi(doi: string): Promise<any | null> {
-  const res = await fetch(`${config.openalex.base}/works/doi:${doi}?select=${WORK_SELECT}&mailto=${mailto()}`, { headers: { 'User-Agent': ua() } })
+  const res = await oaFetch(`${config.openalex.base}/works/doi:${doi}?select=${WORK_SELECT}&mailto=${mailto()}`, { headers: { 'User-Agent': ua() } })
   if (!res.ok) return null
   return res.json()
 }
@@ -36,7 +49,7 @@ export async function getWorkByOpenAlexId(
   const m = String(id).match(/(W\d+)/)
   if (!m) return null
   const url = `${config.openalex.base}/works/${m[1]}?select=id,doi,title,ids,primary_location&mailto=${mailto()}`
-  const res = await fetch(url, { headers: { 'User-Agent': ua() } })
+  const res = await oaFetch(url, { headers: { 'User-Agent': ua() } })
   if (!res.ok) return null
   const w = (await res.json()) as any
   if (!w) return null
@@ -66,7 +79,7 @@ const RELATED_SELECT =
 
 async function fetchWork(url: string): Promise<any | null> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': ua() } })
+    const res = await oaFetch(url, { headers: { 'User-Agent': ua() } })
     if (!res.ok) return null
     return await res.json()
   } catch {
