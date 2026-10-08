@@ -35,6 +35,7 @@ import {
   ensureTranslationStyle,
   failPendingTranslations,
   insertPlaceholder,
+  isInTranslateWindow,
   isTranslationReady,
   removeTranslations,
   restoreCachedTranslations,
@@ -199,6 +200,13 @@ const ReaderPage: React.FC = () => {
       if (sel && !sel.isCollapsed && sel.toString().trim()) return
       const node = (e.target as Element | null)?.closest?.(`[${TRANSLATION_ATTR}]`) as HTMLElement | null
       if (!node) return
+      // A finished translation is ordinary selectable text. Folding it on any
+      // click makes selecting it impossible: the first click of a double-click
+      // (the usual way to pick a word) would replace the text with its collapsed
+      // label before the word could be selected, and a drag whose endpoints miss
+      // the glyphs would fold the block too. So only placeholders fold on a
+      // plain click; folding a finished block stays available with Alt+click.
+      if (isTranslationReady(node) && !e.altKey) return
       toggleTranslation(node)
       const blockIndex = Number(node.getAttribute(TRANSLATION_FOR_ATTR))
       // Expanding puts the translated text back, so its marks must be repainted.
@@ -360,7 +368,9 @@ const ReaderPage: React.FC = () => {
       // Enqueue blocks within the prefetch window. `getBoundingClientRect` is
       // relative to the iframe viewport, so this tracks the iframe's own scroll
       // reliably (an IntersectionObserver rooted at the parent frame does not
-      // update for in-iframe scrolling).
+      // update for in-iframe scrolling). `isInTranslateWindow` also keeps
+      // hidden blocks (arXiv's collapsed TOC and dialogs) from squatting in the
+      // queue ahead of the visible text.
       let scheduled = false
       const scan = () => {
         scheduled = false
@@ -370,8 +380,7 @@ const ReaderPage: React.FC = () => {
         let added = false
         for (let i = 0; i < blocks.length; i++) {
           if (queue.isDone(i)) continue
-          const rect = blocks[i].getBoundingClientRect()
-          if (rect.bottom >= -margin && rect.top <= viewport + margin) {
+          if (isInTranslateWindow(blocks[i].getBoundingClientRect(), viewport, margin)) {
             if (queue.enqueue(i)) added = true
           }
         }

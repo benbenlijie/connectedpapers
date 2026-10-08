@@ -307,11 +307,20 @@ Translation is **lazy**: `lib/translationQueue.ts` hands out queued block
 indices in document order, and the reader enqueues only blocks within two
 viewports of the visible area (`getBoundingClientRect` scan on a rAF-throttled
 `scroll` listener, since an IntersectionObserver rooted at the parent frame does
-not track in-iframe scrolling). A pump drains the queue in batches of 4 with a
-cancel flag and per-document/session guards, showing `done/total` progress.
+not track in-iframe scrolling). `isInTranslateWindow` excludes blocks without a
+layout box: arXiv hides a full table of contents and a "report an issue" dialog
+in every paper, and their all-zero rects would otherwise look permanently
+in-view, queue ahead of the visible prose in document order and spend the
+translation budget on content nobody can see. A pump drains the queue in batches
+of 4 with a cancel flag and per-document/session guards, showing `done/total`
+progress.
 On load, all cached translations are restored instantly (no network); a partial
 restore leaves the toggle on "翻译" so the user can fill the rest lazily.
-Clicking a translation toggles it; the toggle is disabled with no provider.
+Clicking a translation toggles it; the toggle is disabled with no provider. Only
+a **placeholder** (pending/collapsed/failed) folds on a plain click — a finished
+translation is ordinary selectable text, and folding it on click swallowed the
+word being picked by a double-click. Folding a finished block stays available on
+Alt+click.
 
 ### 13. AI assistant as an opencode agent
 

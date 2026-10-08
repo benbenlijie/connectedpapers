@@ -13,6 +13,7 @@ import {
   toggleTranslation,
   ensureTranslationStyle,
   translationNodeFor,
+  isInTranslateWindow,
   isTranslationReady,
   readyTranslationNodes,
   SOURCE_ATTR,
@@ -105,6 +106,34 @@ describe('removeTranslations / setTranslationsVisible', () => {
     expect((node as HTMLElement).style.display).toBe('none')
     setTranslationsVisible(d, true)
     expect((node as HTMLElement).style.display).toBe('')
+  })
+})
+
+describe('isInTranslateWindow', () => {
+  const rect = (top: number, bottom: number, width = 800, height = 20) => ({ top, bottom, width, height })
+
+  it('keeps blocks inside the prefetch window', () => {
+    expect(isInTranslateWindow(rect(0, 20), 800, 1600)).toBe(true)
+  })
+
+  it('keeps blocks just above the viewport, within the prefetch margin', () => {
+    expect(isInTranslateWindow(rect(-500, -480), 800, 1600)).toBe(true)
+  })
+
+  it('drops blocks past the prefetch window', () => {
+    expect(isInTranslateWindow(rect(4000, 4020), 800, 1600)).toBe(false)
+  })
+
+  it('drops hidden blocks, whose zero rect always looks in view', () => {
+    // A collapsed `nav.ltx_TOC` item reports top/bottom/width/height of 0, which
+    // trivially passes the window test.
+    expect(isInTranslateWindow(rect(0, 0, 0, 0), 800, 1600)).toBe(false)
+  })
+
+  it('still queues everything when the document has no layout', () => {
+    // jsdom (and a hidden iframe) report a zero viewport and zero rects for all
+    // blocks, so filtering by rect there would translate nothing at all.
+    expect(isInTranslateWindow(rect(0, 0, 0, 0), 0, 0)).toBe(true)
   })
 })
 

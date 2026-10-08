@@ -45,6 +45,38 @@ afterEach(() => {
 })
 
 describe('ReaderPage', () => {
+  /** Mount the reader and give its iframe a real, already-translated document. */
+  async function setupTranslatedPaper() {
+    renderReader()
+    const frame = (await screen.findByTestId('reader-frame')) as HTMLIFrameElement
+    const doc = frame.contentDocument!
+    // jsdom does not load `srcdoc`, so give the iframe a real body first.
+    doc.documentElement.innerHTML = '<head><title>Paper</title></head><body><p>hello world</p></body>'
+    // Bind the reader's in-iframe listeners (idempotent: a real load may have
+    // done it already).
+    frame.dispatchEvent(new Event('load'))
+
+    const block = doc.querySelector('p')!
+    block.setAttribute('data-cn-src', '0')
+    const node = doc.createElement('div')
+    node.setAttribute('data-cn-translation', '')
+    node.setAttribute('data-cn-for', '0')
+    node.className = 'cn-translation'
+    node.textContent = '你好，世界'
+    block.insertAdjacentElement('afterend', node)
+    return { doc, node }
+  }
+
+  function selectRange(doc: Document, node: Node, start: number, end: number) {
+    const range = doc.createRange()
+    range.setStart(node, start)
+    range.setEnd(node, end)
+    const sel = doc.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    return sel
+  }
+
   it('fetches, sanitizes and renders the article with its outline', async () => {
     renderReader()
     const frame = await screen.findByTestId('reader-frame')
@@ -99,30 +131,9 @@ describe('ReaderPage', () => {
   })
 
   it('highlights translated text as well as the English source', async () => {
-    renderReader()
-    const frame = (await screen.findByTestId('reader-frame')) as HTMLIFrameElement
-    const doc = frame.contentDocument!
-    // jsdom does not load `srcdoc`, so give the iframe a real body first.
-    doc.documentElement.innerHTML = '<head><title>Paper</title></head><body><p>hello world</p></body>'
-    // Bind the reader's in-iframe listeners (idempotent: a real load may have
-    // done it already).
-    frame.dispatchEvent(new Event('load'))
+    const { doc, node } = await setupTranslatedPaper()
 
-    const block = doc.querySelector('p')!
-    block.setAttribute('data-cn-src', '0')
-    const node = doc.createElement('div')
-    node.setAttribute('data-cn-translation', '')
-    node.setAttribute('data-cn-for', '0')
-    node.className = 'cn-translation'
-    node.textContent = '你好，世界'
-    block.insertAdjacentElement('afterend', node)
-
-    const range = doc.createRange()
-    range.setStart(node.firstChild!, 0)
-    range.setEnd(node.firstChild!, 2)
-    const sel = doc.getSelection()!
-    sel.removeAllRanges()
-    sel.addRange(range)
+    selectRange(doc, node.firstChild!, 0, 2)
     await act(async () => {
       doc.dispatchEvent(new Event('mouseup'))
     })
@@ -142,5 +153,45 @@ describe('ReaderPage', () => {
       surface: 'translation',
       color: 'green',
     })
+  })
+
+  it('keeps a finished translation selectable instead of folding it on click', async () => {
+    const { doc, node } = await setupTranslatedPaper()
+
+    // A plain click on the text of a finished translation only places a caret.
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(node.textContent).toBe('你好，世界')
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(false)
+
+    // Double-clicking a word (a collapsed selection on the first click, the word
+    // itself on the second) must leave the text alone so the word stays picked.
+    await act(async () => {
+      doc.getSelection()!.removeAllRanges()
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    })
+    selectRange(doc, node.firstChild!, 0, 2)
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+    })
+    expect(node.textContent).toBe('你好，世界')
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(false)
+    expect(doc.getSelection()!.toString()).toBe('你好')
+  })
+
+  it('folds a finished translation on Alt+click and unfolds it on a plain click', async () => {
+    const { node } = await setupTranslatedPaper()
+
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }))
+    })
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(true)
+
+    await act(async () => {
+      node.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(node.classList.contains('cn-translation--collapsed')).toBe(false)
+    expect(node.textContent).toBe('你好，世界')
   })
 })

@@ -35,6 +35,27 @@ export function markBlock(el: Element, id: string): void {
 }
 
 /**
+ * Whether a block belongs in the lazy-translation prefetch window, given its
+ * layout rect, the viewport height and how far ahead to prefetch.
+ *
+ * arXiv HTML hides a whole table of contents and a "report an issue" dialog in
+ * every paper. `display:none` blocks report an all-zero rect, which always looks
+ * like it sits at the top of the viewport, so they used to be queued ahead of
+ * the visible text and burn the translation budget on content nobody can see
+ * (one paper: 99 of 297 blocks). They are skipped whenever the document really
+ * has layout; a zero-height viewport means no layout at all (jsdom, a hidden
+ * iframe), where every rect is zero and filtering would drop everything.
+ */
+export function isInTranslateWindow(
+  rect: { top: number; bottom: number; width: number; height: number },
+  viewport: number,
+  margin: number,
+): boolean {
+  if (viewport > 0 && rect.width === 0 && rect.height === 0) return false
+  return rect.bottom >= -margin && rect.top <= viewport + margin
+}
+
+/**
  * Plain text to send to the translator for a block. Reads a clone so that
  * - the MathML `<annotation>` (raw LaTeX) is dropped: `textContent` would
  *   otherwise emit the visible glyphs *and* the LaTeX, duplicating formulas
