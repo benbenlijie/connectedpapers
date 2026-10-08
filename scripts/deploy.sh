@@ -33,6 +33,7 @@ fi
 echo "==> rsync -> $REMOTE:$DIR"
 rsync -az --delete \
   --exclude '.git' \
+  --exclude '.omo' \
   --exclude 'node_modules' \
   --exclude 'academic-paper-explorer/node_modules' \
   --exclude 'data' \
