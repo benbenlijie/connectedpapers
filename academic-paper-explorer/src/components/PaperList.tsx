@@ -134,13 +134,36 @@ const PaperList: React.FC = () => {
   }
 
   if (searchResults.length === 0) {
+    const modeLabel: Record<string, string> = {
+      keyword: '关键词',
+      doi: 'DOI',
+      arxiv: 'arXiv ID',
+      s2_id: 'Semantic Scholar ID',
+    }
     return (
       <div className="p-6 text-center">
         <FileText className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-        <p className="text-gray-400">暂无搜索结果</p>
-        <p className="text-sm text-gray-500 mt-2">
-          请在上方搜索框中输入查询内容
-        </p>
+        {submittedQuery ? (
+          <>
+            <p className="text-gray-300">
+              未找到与「
+              <span className="font-medium text-white break-words">{submittedQuery.query}</span>
+              」相关的论文
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              {submittedQuery.query_type === 'keyword'
+                ? '试试更换关键词、检查拼写，或改用 DOI / arXiv ID / Semantic Scholar ID 精确查找。'
+                : `请检查所填 ${modeLabel[submittedQuery.query_type] ?? '查询内容'} 是否正确，或改用关键词搜索。`}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-gray-400">暂无搜索结果</p>
+            <p className="text-sm text-gray-500 mt-2">
+              请在上方搜索框中输入查询内容
+            </p>
+          </>
+        )}
       </div>
     )
   }
