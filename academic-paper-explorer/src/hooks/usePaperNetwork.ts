@@ -2,10 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import type { Paper } from '../types/domain'
 import { networkCacheKey, readCachedNetwork, writeCachedNetwork } from '../lib/networkCache'
+import { resolvePaperKey } from '../lib/paperKey'
 
+/**
+ * Kept for the network/URL callers; delegates to the one shared resolver so the
+ * id used in `?paper=` is the same key the library stores.
+ */
 export function resolveClientId(p: Paper | null): string | null {
-  if (!p) return null
-  return p.semantic_scholar_id || p.doi || p.openalex_id || p.id || null
+  return resolvePaperKey(p)
 }
 
 /** Adaptive depth/maxNodes when the URL did not pin them. */

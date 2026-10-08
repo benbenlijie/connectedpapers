@@ -18,10 +18,6 @@ vi.mock('../hooks/usePaperDetails', () => ({
   usePaperDetails: () => ({ data: undefined, isLoading: false, error: null }),
 }))
 
-vi.mock('../hooks/usePaperNetwork', () => ({
-  resolveClientId: (p: { id?: string } | null) => p?.id ?? null,
-}))
-
 beforeEach(() => {
   localStorage.clear()
   lineageMock.value = undefined
@@ -80,6 +76,85 @@ describe('DetailsPanel notes', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /收藏/ }))
     expect(useLibraryStore.getState().library.favorites).toEqual(['p1'])
+  })
+
+  it('keys the library on the Semantic Scholar id rather than the local id', () => {
+    useUiStore.setState({
+      selectedPaper: {
+        id: 'local-1', semantic_scholar_id: 'S2-1', title: 'T', citation_count: 0, authors: '', source: 'semantic_scholar',
+      },
+    })
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /收藏/ }))
+    expect(useLibraryStore.getState().library.favorites).toEqual(['S2-1'])
+  })
+
+  it('confirms the collection a paper was just added to', () => {
+    useLibraryStore.setState({
+      library: { favorites: [], collections: [{ id: 'c1', name: 'Reading', paperIds: [] }], savedSearches: [] },
+    })
+    renderPanel()
+
+    fireEvent.change(screen.getByLabelText('加入集合'), { target: { value: 'c1' } })
+
+    expect(useLibraryStore.getState().library.collections[0].paperIds).toEqual(['p1'])
+    expect(screen.getByText('已加入「Reading」')).toBeInTheDocument()
+  })
+
+  it('says so instead of silently re-adding a paper already in the collection', () => {
+    useLibraryStore.setState({
+      library: { favorites: [], collections: [{ id: 'c1', name: 'Reading', paperIds: ['p1'] }], savedSearches: [] },
+    })
+    renderPanel()
+
+    fireEvent.change(screen.getByLabelText('加入集合'), { target: { value: 'c1' } })
+
+    expect(useLibraryStore.getState().library.collections[0].paperIds).toEqual(['p1'])
+    expect(screen.getByText('已在「Reading」中')).toBeInTheDocument()
+  })
+
+  it('shows the collections holding the paper and removes it on click', () => {
+    useLibraryStore.setState({
+      library: { favorites: [], collections: [{ id: 'c1', name: 'Reading', paperIds: ['p1'] }], savedSearches: [] },
+    })
+    renderPanel()
+
+    expect(screen.getByText('已在集合：')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Reading/ }))
+
+    expect(useLibraryStore.getState().library.collections[0].paperIds).toEqual([])
+    expect(screen.getByText('已移出「Reading」')).toBeInTheDocument()
+    expect(screen.queryByText('已在集合：')).not.toBeInTheDocument()
+  })
+
+  it('creates a collection from the prompt and joins it', () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('新集合')
+    renderPanel()
+
+    fireEvent.change(screen.getByLabelText('加入集合'), { target: { value: '__new' } })
+
+    const collections = useLibraryStore.getState().library.collections
+    expect(collections).toHaveLength(1)
+    expect(collections[0].name).toBe('新集合')
+    expect(collections[0].paperIds).toEqual(['p1'])
+    expect(screen.getByText('已新建并加入「新集合」')).toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  it('reuses an existing collection instead of creating a duplicate name', () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('Reading')
+    useLibraryStore.setState({
+      library: { favorites: [], collections: [{ id: 'c1', name: 'Reading', paperIds: [] }], savedSearches: [] },
+    })
+    renderPanel()
+
+    fireEvent.change(screen.getByLabelText('加入集合'), { target: { value: '__new' } })
+
+    const collections = useLibraryStore.getState().library.collections
+    expect(collections).toHaveLength(1)
+    expect(collections[0].paperIds).toEqual(['p1'])
+    expect(screen.getByText('已加入已有的集合「Reading」')).toBeInTheDocument()
+    vi.restoreAllMocks()
   })
 
   it('lists prior/follow-up works and selects one on click', () => {

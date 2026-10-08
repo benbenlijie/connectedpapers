@@ -4,6 +4,7 @@ import { useUiStore } from '../store/useUiStore'
 import { useReadingStore } from '../store/useReadingStore'
 import { useLibraryStore } from '../store/useLibraryStore'
 import { READING_STATUSES, statusLabel, type ReadingStatus } from '../lib/reading'
+import { resolvePaperKey } from '../lib/paperKey'
 import { useSearchPapers } from '../hooks/useSearchPapers'
 import { Paper } from '../types/domain'
 
@@ -73,7 +74,7 @@ const PaperList: React.FC = () => {
     return true
   })
 
-  const paperKey = (p: Paper) => p.id || p.semantic_scholar_id || p.openalex_id || p.doi || ''
+  const paperKey = (p: Paper) => resolvePaperKey(p) ?? ''
   const collection = library.collections.find((c) => c.id === collectionFilter)
   const visibleResults = filteredResults.filter((p) => {
     const key = paperKey(p)
@@ -221,7 +222,7 @@ const PaperList: React.FC = () => {
         <div className="space-y-3">
           {visibleResults.map((paper) => (
             <div
-              key={paper.id || paper.semantic_scholar_id || paper.openalex_id}
+              key={paperKey(paper) || paper.title}
               onClick={() => handlePaperSelect(paper)}
               onMouseEnter={(e) => setHover({ paper, x: e.clientX, y: e.clientY })}
               onMouseMove={(e) => setHover({ paper, x: e.clientX, y: e.clientY })}

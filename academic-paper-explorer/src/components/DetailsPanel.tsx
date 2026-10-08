@@ -1,10 +1,10 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe, ArrowUpRight, ArrowDownLeft, X } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
 import { usePaperLineage } from '../hooks/usePaperLineage'
-import { resolveClientId } from '../hooks/usePaperNetwork'
+import { resolvePaperKey } from '../lib/paperKey'
 import { useNotesStore } from '../store/useNotesStore'
 import { useLibraryStore } from '../store/useLibraryStore'
 import type { LineagePaper } from '../types/domain'
@@ -59,11 +59,28 @@ const DetailsPanel: React.FC = () => {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const createCollection = useLibraryStore((s) => s.createCollection)
   const addToCollection = useLibraryStore((s) => s.addToCollection)
-  
+  const removeFromCollection = useLibraryStore((s) => s.removeFromCollection)
+
+  const [collectionNotice, setCollectionNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+  }, [])
+
+  const flashCollectionNotice = (message: string) => {
+    setCollectionNotice(message)
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setCollectionNotice(null), 2500)
+  }
+
   // 最近点击优先：对比图选中的节点 > 主图选中的节点 > 主图论文
-  const paperId = compareSelectedNodeId || selectedNodeId || resolveClientId(selectedPaper)
+  const paperId = compareSelectedNodeId || selectedNodeId || resolvePaperKey(selectedPaper)
   const note = paperId ? notes[paperId] ?? '' : ''
   const saved = note.trim().length > 0
+  const collectionMemberships = paperId
+    ? library.collections.filter((c) => c.paperIds.includes(paperId))
+    : []
   const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
   const { data: lineage } = usePaperLineage(paperId)
 
@@ -181,41 +198,84 @@ const DetailsPanel: React.FC = () => {
 
         {/* 收藏 / 集合 */}
         {paperId && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => toggleFavorite(paperId)}
-              className={`flex items-center gap-1 rounded px-3 py-1 text-sm ${
-                library.favorites.includes(paperId)
-                  ? 'bg-yellow-600/80 text-white'
-                  : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-              }`}
-            >
-              ★ {library.favorites.includes(paperId) ? '已收藏' : '收藏'}
-            </button>
-            <select
-              aria-label="加入集合"
-              value=""
-              onChange={(e) => {
-                const value = e.target.value
-                if (!value || !paperId) return
-                if (value === '__new') {
-                  const name = window.prompt('新集合名称')
-                  if (name && name.trim()) addToCollection(createCollection(name.trim()), paperId)
-                } else {
-                  addToCollection(value, paperId)
-                }
-              }}
-              className="rounded bg-gray-700 px-2 py-1 text-sm text-gray-200"
-            >
-              <option value="">加入集合…</option>
-              {library.collections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-              <option value="__new">＋ 新建集合</option>
-            </select>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleFavorite(paperId)}
+                className={`flex items-center gap-1 rounded px-3 py-1 text-sm ${
+                  library.favorites.includes(paperId)
+                    ? 'bg-yellow-600/80 text-white'
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
+              >
+                ★ {library.favorites.includes(paperId) ? '已收藏' : '收藏'}
+              </button>
+              <select
+                aria-label="加入集合"
+                value=""
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (!value || !paperId) return
+                  if (value === '__new') {
+                    const name = window.prompt('新集合名称')
+                    const trimmed = name?.trim()
+                    if (!trimmed) return
+                    const existing = library.collections.find((c) => c.name === trimmed)
+                    if (existing) {
+                      addToCollection(existing.id, paperId)
+                      flashCollectionNotice(`已加入已有的集合「${trimmed}」`)
+                      return
+                    }
+                    addToCollection(createCollection(trimmed), paperId)
+                    flashCollectionNotice(`已新建并加入「${trimmed}」`)
+                    return
+                  }
+                  const target = library.collections.find((c) => c.id === value)
+                  if (!target) return
+                  if (target.paperIds.includes(paperId)) {
+                    flashCollectionNotice(`已在「${target.name}」中`)
+                    return
+                  }
+                  addToCollection(target.id, paperId)
+                  flashCollectionNotice(`已加入「${target.name}」`)
+                }}
+                className="rounded bg-gray-700 px-2 py-1 text-sm text-gray-200"
+              >
+                <option value="">加入集合…</option>
+                {library.collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value="__new">＋ 新建集合</option>
+              </select>
+            </div>
+
+            {collectionMemberships.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-gray-500">已在集合：</span>
+                {collectionMemberships.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    title={`从「${c.name}」移出`}
+                    onClick={() => {
+                      removeFromCollection(c.id, paperId)
+                      flashCollectionNotice(`已移出「${c.name}」`)
+                    }}
+                    className="flex items-center gap-1 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-red-900/60"
+                  >
+                    {c.name}
+                    <X className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div aria-live="polite" className="min-h-[1rem] text-xs text-emerald-400">
+              {collectionNotice}
+            </div>
           </div>
         )}
 
