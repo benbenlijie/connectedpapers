@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useUiStore } from '../store/useUiStore'
-import { resolveClientId } from './usePaperNetwork'
+import { resolveClientId, resolveNetworkParams } from './usePaperNetwork'
 import { parseUrlState, serializeUrlState, paperStubFromId, type UrlState } from '../graph/urlState'
 
 export function useUrlSync() {
@@ -21,6 +21,8 @@ export function useUrlSync() {
     store.setSelectedNodeId(s.selectedNodeId)
     store.setComparePaper(s.comparePaperId ? paperStubFromId(s.comparePaperId) : null)
     store.setCompareSelectedNodeId(s.compareSelectedNodeId)
+    store.setExpandedNodeIds(s.expandedNodeIds)
+    store.setCompareExpandedNodeIds(s.compareExpandedNodeIds)
     store.setGraphView(s.graphView)
     store.setColorMode(s.colorMode)
     store.setSizeMode(s.sizeMode)
@@ -40,10 +42,11 @@ export function useUrlSync() {
     if (!hydrated.current) return
     const write = () => {
       const s = useUiStore.getState()
+      const resolved = resolveNetworkParams(s.selectedPaper, s.graphDepth ?? undefined, s.graphMaxNodes ?? undefined)
       const next: UrlState = {
         paperId: resolveClientId(s.selectedPaper),
-        depth: s.graphDepth,
-        maxNodes: s.graphMaxNodes,
+        depth: resolved.depth,
+        maxNodes: resolved.maxNodes,
         selectedNodeId: s.selectedNodeId,
         comparePaperId: resolveClientId(s.comparePaper),
         compareSelectedNodeId: s.compareSelectedNodeId,
@@ -55,6 +58,8 @@ export function useUrlSync() {
         minCitations: s.filters.minCitations,
         selectedFields: s.filters.selectedFields,
         selectedVenues: s.filters.selectedVenues,
+        expandedNodeIds: s.expandedNodeIds,
+        compareExpandedNodeIds: s.compareExpandedNodeIds,
       }
       const serialized = serializeUrlState(next)
       if (serialized === lastWritten.current) return

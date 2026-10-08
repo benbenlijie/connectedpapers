@@ -16,6 +16,8 @@ export interface UrlState {
   minCitations: number
   selectedFields: string[]
   selectedVenues: string[]
+  expandedNodeIds: string[]
+  compareExpandedNodeIds: string[]
 }
 
 const COLOR_MODES: ColorMode[] = ['cluster', 'year', 'field']
@@ -41,6 +43,8 @@ export function defaultUrlState(): UrlState {
     minCitations: 0,
     selectedFields: [],
     selectedVenues: [],
+    expandedNodeIds: [],
+    compareExpandedNodeIds: [],
   }
 }
 
@@ -64,7 +68,9 @@ export function serializeUrlState(state: UrlState): string {
     if (state.comparePaperId) {
       params.set('paper2', state.comparePaperId)
       if (state.compareSelectedNodeId) params.set('node2', state.compareSelectedNodeId)
+      for (const id of state.compareExpandedNodeIds) params.append('e2', id)
     }
+    for (const id of state.expandedNodeIds) params.append('e', id)
   }
   if (state.selectedNodeId) params.set('node', state.selectedNodeId)
   if (state.graphView === '3d') params.set('view', '3d')
@@ -109,6 +115,8 @@ export function parseUrlState(search: string): UrlState {
     minCitations: Math.max(0, parseIntOrNull(params.get('cit')) ?? 0),
     selectedFields: params.getAll('f'),
     selectedVenues: params.getAll('v'),
+    expandedNodeIds: params.getAll('e'),
+    compareExpandedNodeIds: params.getAll('e2'),
   }
 }
 

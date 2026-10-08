@@ -40,6 +40,26 @@ describe('urlState', () => {
     expect(parsed.compareSelectedNodeId).toBe('n2')
   })
 
+  it('round-trips expanded node ids for both panes', () => {
+    const state = {
+      ...defaultUrlState(),
+      paperId: 'A',
+      comparePaperId: 'B',
+      expandedNodeIds: ['n1', 'n2'],
+      compareExpandedNodeIds: ['m1'],
+    }
+    const parsed = parseUrlState(serializeUrlState(state))
+    expect(parsed.expandedNodeIds).toEqual(['n1', 'n2'])
+    expect(parsed.compareExpandedNodeIds).toEqual(['m1'])
+  })
+
+  it('omits expanded ids when there is no root paper', () => {
+    const params = new URLSearchParams(
+      serializeUrlState({ ...defaultUrlState(), expandedNodeIds: ['n1'] }),
+    )
+    expect(params.has('e')).toBe(false)
+  })
+
   it('omits default-valued fields', () => {
     const state = { ...defaultUrlState(), paperId: 'ABC123' }
     const params = new URLSearchParams(serializeUrlState(state))

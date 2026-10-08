@@ -73,6 +73,8 @@ beforeEach(() => {
     submittedQuery: null,
     comparePaper: null,
     compareSelectedNodeId: null,
+    expandedNodeIds: [],
+    compareExpandedNodeIds: [],
   })
 })
 
@@ -166,6 +168,35 @@ describe('NetworkGraph', () => {
     render(<NetworkGraph />)
     fireEvent.click(screen.getByTestId('node-a-rightclick'))
     fireEvent.click(screen.getByRole('menuitem', { name: '展开该节点' }))
+    await waitFor(() => expect(screen.getByText(/3 节点/)).toBeInTheDocument())
+  })
+
+  it('records the expanded node id in the store so it can be shared', async () => {
+    ;(api.networkWithPolling as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nodes: [
+        { id: 'z', label: 'Z', title: 'Z', citationCount: 0, authors: '', isRoot: false, pageRankScore: 0, clusterId: 0, size: 1, color: '#fff', year: 2005 },
+      ],
+      edges: [{ from: 'a', to: 'z', type: 'reference', weight: 1 }],
+    })
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '展开该节点' }))
+    await waitFor(() => expect(useUiStore.getState().expandedNodeIds).toContain('a'))
+  })
+
+  it('re-expands nodes restored from the store so a shared link keeps them', async () => {
+    ;(api.networkWithPolling as ReturnType<typeof vi.fn>).mockResolvedValue({
+      nodes: [
+        { id: 'z', label: 'Z', title: 'Z', citationCount: 0, authors: '', isRoot: false, pageRankScore: 0, clusterId: 0, size: 1, color: '#fff', year: 2005 },
+      ],
+      edges: [{ from: 'a', to: 'z', type: 'reference', weight: 1 }],
+    })
+    useUiStore.setState({
+      selectedPaper: { id: 'root', title: 'Root', citation_count: 0, authors: '', source: 'semantic_scholar' },
+      expandedNodeIds: ['a'],
+    })
+    render(<NetworkGraph />)
+    await waitFor(() => expect(api.networkWithPolling).toHaveBeenCalledWith('a', 1, 50))
     await waitFor(() => expect(screen.getByText(/3 节点/)).toBeInTheDocument())
   })
 })

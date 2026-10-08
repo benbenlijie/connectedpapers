@@ -143,11 +143,20 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     graphDepth,
     graphMaxNodes,
     hiddenEdgeTypes,
+    expandedNodeIds,
+    compareExpandedNodeIds,
+    addExpandedNode,
+    setExpandedNodeIds,
+    addCompareExpandedNode,
+    setCompareExpandedNodeIds,
   } = useUiStore()
 
   const isCompare = slot === 'compare'
   const rootPaper = paper !== undefined ? paper : selectedPaper
   const activeSelectionId = isCompare ? compareSelectedNodeId : selectedNodeId
+  const expandedIds = isCompare ? compareExpandedNodeIds : expandedNodeIds
+  const addExpandedId = isCompare ? addCompareExpandedNode : addExpandedNode
+  const clearExpandedIds = isCompare ? setCompareExpandedNodeIds : setExpandedNodeIds
 
   const selectNode = useCallback(
     (id: string | null) => {
@@ -202,6 +211,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [nodeListOpen, setNodeListOpen] = useState(false)
   const rootSelectedFor = useRef<string | null>(null)
+  const expandedFetchedFor = useRef<Set<string>>(new Set())
 
   const setContainer = useCallback((el: HTMLDivElement | null) => {
     containerElRef.current = el
@@ -254,23 +264,48 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   }, [networkData, setTimelineYear, setTimelinePlaying])
 
   const cacheKey = networkCacheKeyForPaper(rootPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
+  const prevCacheKey = useRef<string | null>(null)
 
-  // Reset lazily-expanded nodes when the graph itself changes.
-  useEffect(() => {
-    setExtra({ nodes: [], edges: [] })
-  }, [cacheKey])
-
-  const expandNode = useCallback(async (node: GraphNode) => {
-    setExpandingId(node.id)
+  const fetchExpansion = useCallback(async (id: string) => {
+    if (expandedFetchedFor.current.has(id)) return
+    expandedFetchedFor.current.add(id)
     try {
-      const data = await api.networkWithPolling(node.id, 1, 50)
+      const data = await api.networkWithPolling(id, 1, 50)
       setExtra((prev) => mergeNetworkData(prev, data))
     } catch {
-      // expansion is best-effort
-    } finally {
-      setExpandingId(null)
+      expandedFetchedFor.current.delete(id)
     }
   }, [])
+
+  // A different graph drops expansions; the first build must not wipe URL-restored ids.
+  useEffect(() => {
+    const prev = prevCacheKey.current
+    prevCacheKey.current = cacheKey
+    if (prev !== null && prev !== cacheKey) {
+      setExtra({ nodes: [], edges: [] })
+      expandedFetchedFor.current = new Set()
+      clearExpandedIds([])
+    }
+  }, [cacheKey, clearExpandedIds])
+
+  // Re-fetch expansions carried by the URL so a shared link restores them.
+  useEffect(() => {
+    if (!networkData) return
+    for (const id of expandedIds) void fetchExpansion(id)
+  }, [networkData, expandedIds, fetchExpansion])
+
+  const expandNode = useCallback(
+    async (node: GraphNode) => {
+      setExpandingId(node.id)
+      addExpandedId(node.id)
+      try {
+        await fetchExpansion(node.id)
+      } finally {
+        setExpandingId(null)
+      }
+    },
+    [addExpandedId, fetchExpansion],
+  )
 
   const graphData = useMemo(() => {
     const data = graphAdapter(filteredNodes, filteredEdges, { colorMode, sizeMode })

@@ -21,6 +21,8 @@ interface UiState {
   graphQuery: string
   graphDepth: number | null
   graphMaxNodes: number | null
+  expandedNodeIds: string[]
+  compareExpandedNodeIds: string[]
   hiddenEdgeTypes: EdgeType[]
   comparePaper: Paper | null
   compareSelectedNodeId: string | null
@@ -40,6 +42,10 @@ interface UiState {
   setTimelinePlaying: (playing: boolean) => void
   setGraphQuery: (q: string) => void
   setGraphParams: (depth: number | null, maxNodes: number | null) => void
+  setExpandedNodeIds: (ids: string[]) => void
+  addExpandedNode: (id: string) => void
+  setCompareExpandedNodeIds: (ids: string[]) => void
+  addCompareExpandedNode: (id: string) => void
   toggleEdgeType: (type: EdgeType) => void
 }
 
@@ -64,6 +70,8 @@ export const useUiStore = create<UiState>((set) => ({
   graphQuery: '',
   graphDepth: null,
   graphMaxNodes: null,
+  expandedNodeIds: [],
+  compareExpandedNodeIds: [],
   hiddenEdgeTypes: [],
   comparePaper: null,
   compareSelectedNodeId: null,
@@ -83,6 +91,16 @@ export const useUiStore = create<UiState>((set) => ({
   setTimelinePlaying: (playing) => set({ timelinePlaying: playing }),
   setGraphQuery: (q) => set({ graphQuery: q }),
   setGraphParams: (depth, maxNodes) => set({ graphDepth: depth, graphMaxNodes: maxNodes }),
+  setExpandedNodeIds: (ids) => set({ expandedNodeIds: ids }),
+  addExpandedNode: (id) =>
+    set((s) => (s.expandedNodeIds.includes(id) ? {} : { expandedNodeIds: [...s.expandedNodeIds, id] })),
+  setCompareExpandedNodeIds: (ids) => set({ compareExpandedNodeIds: ids }),
+  addCompareExpandedNode: (id) =>
+    set((s) =>
+      s.compareExpandedNodeIds.includes(id)
+        ? {}
+        : { compareExpandedNodeIds: [...s.compareExpandedNodeIds, id] },
+    ),
   toggleEdgeType: (type) =>
     set((s) => ({
       hiddenEdgeTypes: s.hiddenEdgeTypes.includes(type)

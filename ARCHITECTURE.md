@@ -216,7 +216,9 @@ steps between papers but not between slider frames.
 
 The URL carries the resolved root id plus the explicit `depth`/`maxNodes`, so the
 same link rebuilds the same cached network regardless of `usePaperNetwork`'s
-adaptive defaults. On load the hook installs a minimal `paperStubFromId(id)` so
+adaptive defaults. Lazily-expanded node ids ride along as repeated `e` (primary)
+and `e2` (compare) params; `NetworkGraph` re-fetches each on load, so a shared
+link restores the expanded subgraphs too. On load the hook installs a minimal `paperStubFromId(id)` so
 `DetailsPanel`'s existing `usePaperDetails` call fills in the full record.
 `selectRootPaper` (used by list clicks and double-click rebuild) clears the
 explicit network params so a freshly chosen paper gets adaptive defaults again.

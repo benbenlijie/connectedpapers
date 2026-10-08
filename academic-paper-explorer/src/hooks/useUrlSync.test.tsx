@@ -26,6 +26,7 @@ beforeEach(() => {
   useUiStore.setState({
     selectedPaper: null, selectedNodeId: null, graphDepth: null, graphMaxNodes: null,
     comparePaper: null, compareSelectedNodeId: null,
+    expandedNodeIds: [], compareExpandedNodeIds: [],
     graphView: '2d', colorMode: 'cluster', sizeMode: 'citations', timelineYear: null,
     filters: { yearRange: [1990, new Date().getFullYear()], minCitations: 0, selectedFields: [], selectedVenues: [] },
   })
@@ -103,5 +104,54 @@ describe('useUrlSync', () => {
       }),
     )
     expect(screen.getByTestId('search').textContent).toContain('paper2=B')
+  })
+
+  it('pins the resolved graph params so a shared link rebuilds the same network', () => {
+    renderAt('/')
+    act(() => {
+      useUiStore.getState().selectRootPaper({
+        id: 'ABC', title: 't', citation_count: 10, authors: 'a',
+        source: 'semantic_scholar', publication_year: 2020,
+      })
+    })
+    const search = screen.getByTestId('search').textContent ?? ''
+    // Non-adaptive paper: depth 2 / maxNodes 100 must be pinned, otherwise the
+    // recipient's stub paper makes resolveNetworkParams fall back to 1 / 50.
+    expect(search).toContain('d=2')
+    expect(search).toContain('mn=100')
+  })
+
+  it('pins adaptive params for older papers', () => {
+    renderAt('/')
+    act(() => {
+      useUiStore.getState().selectRootPaper({
+        id: 'OLD', title: '', citation_count: 0, authors: '',
+        source: 'semantic_scholar', publication_year: 2000,
+      })
+    })
+    const search = screen.getByTestId('search').textContent ?? ''
+    expect(search).toContain('d=1')
+    expect(search).toContain('mn=50')
+  })
+
+  it('hydrates expanded node ids from the URL', () => {
+    renderAt('/?paper=A&e=n1&e=n2&paper2=B&e2=m1')
+    const s = useUiStore.getState()
+    expect(s.expandedNodeIds).toEqual(['n1', 'n2'])
+    expect(s.compareExpandedNodeIds).toEqual(['m1'])
+  })
+
+  it('writes expanded node ids into the URL', () => {
+    renderAt('/?paper=A')
+    act(() => {
+      useUiStore.getState().setComparePaper({
+        id: 'B', title: 't', citation_count: 0, authors: '', source: 'semantic_scholar',
+      })
+      useUiStore.getState().addExpandedNode('n1')
+      useUiStore.getState().addCompareExpandedNode('m1')
+    })
+    const search = screen.getByTestId('search').textContent ?? ''
+    expect(search).toContain('e=n1')
+    expect(search).toContain('e2=m1')
   })
 })
