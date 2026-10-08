@@ -144,6 +144,7 @@ Hard constraints that shape every decision below:
 | `lib/notes.ts` | Pure note map helpers: parse/serialize/add/remove/annotated ids. |
 | `lib/reading.ts` | Pure reading-status map helpers (parse/serialize/withStatus/withProgress). |
 | `lib/highlights.ts` | Pure highlight anchors + `<mark>` apply/remove over the reader DOM. |
+| `lib/readerHighlights.ts` | Resolves stored anchors onto the source or translation layer and repaints them. |
 | `lib/searchHistory.ts` | Pure recent-query list helpers (parse/add/remove/filter). |
 | `lib/networkCache.ts` | Pure + localStorage cache of built networks and node positions. |
 | `lib/graphMerge.ts` | Pure union of two graphs (nodes by id, edges by from|to|type). |
@@ -390,6 +391,21 @@ the stored offsets stay valid across reloads. `store/useHighlightsStore.ts`
 persists `localStorage['connectedpapers.highlights.v1']` per reader key;
 `ReaderPage` re-applies stored highlights on iframe load and shows a floating bar
 for creating (colour + optional note) or editing (recolour/delete) them.
+
+Both text layers are highlightable. An anchor may carry
+`surface: 'translation'`, meaning its offsets are measured inside the injected
+`data-cn-translation` node for that block index instead of the source block
+(an absent `surface` keeps meaning `source`, so old payloads still load).
+`lib/readerHighlights.ts` owns the layer logic: a selection is looked up against
+ready translation nodes *before* the source blocks, because a table-cell
+translation sits inside its `<td>` and would otherwise be captured by the source
+anchor; `paintHighlight` records/replays a mark on whichever element the anchor
+resolves to and strips any stale marks for the same id first. Translation
+anchors are skipped while their node is pending, collapsed or failed — those
+states replace the text with a sentinel, so the offsets no longer describe what
+is on screen. Marks are repainted after each translation batch, when a folded
+translation is expanded, and on restore. A click that ends a text drag no longer
+folds the translation under the pending annotation.
 
 ### 16. Search keyword history
 

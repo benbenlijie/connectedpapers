@@ -3,10 +3,11 @@ export const SOURCE_ATTR = 'data-cn-src'
 export const TRANSLATION_ATTR = 'data-cn-translation'
 export const TRANSLATION_FOR_ATTR = 'data-cn-for'
 const TRANSLATION_FULL_ATTR = 'data-cn-full'
-const COLLAPSED_CLASS = 'cn-translation--collapsed'
+export const COLLAPSED_CLASS = 'cn-translation--collapsed'
 const COLLAPSED_LABEL = '译文已折叠，点击展开'
-const PENDING_CLASS = 'cn-translation--pending'
+export const PENDING_CLASS = 'cn-translation--pending'
 const PENDING_LABEL = '翻译中…'
+export const FAILED_CLASS = 'cn-translation--failed'
 const FAILED_LABEL = '翻译失败'
 
 const HAS_LETTER = /[A-Za-z\u00C0-\u024F\u0400-\u04FF]/
@@ -93,6 +94,7 @@ export function insertPlaceholder(doc: Document, block: Element, id: string): El
   let node = doc.querySelector<HTMLElement>(`[${TRANSLATION_FOR_ATTR}="${id}"]`)
   if (!node) node = insertTranslation(doc, block, id, '') as HTMLElement
   node.classList.remove(COLLAPSED_CLASS)
+  node.classList.remove(FAILED_CLASS)
   node.removeAttribute(TRANSLATION_FULL_ATTR)
   node.classList.add(PENDING_CLASS)
   node.textContent = PENDING_LABEL
@@ -105,6 +107,7 @@ export function updateTranslation(doc: Document, id: string, text: string): void
   if (!node) return
   node.classList.remove(PENDING_CLASS)
   node.classList.remove(COLLAPSED_CLASS)
+  node.classList.remove(FAILED_CLASS)
   node.removeAttribute(TRANSLATION_FULL_ATTR)
   node.textContent = text
 }
@@ -113,6 +116,7 @@ export function updateTranslation(doc: Document, id: string, text: string): void
 export function failPendingTranslations(doc: Document): void {
   doc.querySelectorAll<HTMLElement>(`[${TRANSLATION_ATTR}].${PENDING_CLASS}`).forEach((el) => {
     el.classList.remove(PENDING_CLASS)
+    el.classList.add(FAILED_CLASS)
     el.textContent = FAILED_LABEL
   })
 }
@@ -120,6 +124,40 @@ export function failPendingTranslations(doc: Document): void {
 export function removeTranslations(doc: Document): void {
   doc.querySelectorAll(`[${TRANSLATION_ATTR}]`).forEach((el) => el.remove())
   doc.querySelectorAll(`[${SOURCE_ATTR}]`).forEach((el) => el.removeAttribute(SOURCE_ATTR))
+}
+
+/** Resolve the translation node inserted for a source block index, if any. */
+export function translationNodeFor(doc: Document, blockIndex: number): HTMLElement | null {
+  return doc.querySelector<HTMLElement>(`[${TRANSLATION_ATTR}][${TRANSLATION_FOR_ATTR}="${blockIndex}"]`)
+}
+
+/**
+ * True when a translation node currently renders its finished text, so
+ * character offsets recorded against it still line up. Pending placeholders,
+ * collapsed placeholders and failed nodes show sentinel text instead, so
+ * highlights must not be painted (or read) there.
+ */
+export function isTranslationReady(node: Element | null): node is HTMLElement {
+  if (!node) return false
+  return (
+    !node.classList.contains(PENDING_CLASS) &&
+    !node.classList.contains(COLLAPSED_CLASS) &&
+    !node.classList.contains(FAILED_CLASS)
+  )
+}
+
+/** Every translation node that is ready to be highlighted, each with the source
+ * block index it was inserted for. */
+export function readyTranslationNodes(doc: Document): { blockIndex: number; element: HTMLElement }[] {
+  const out: { blockIndex: number; element: HTMLElement }[] = []
+  doc
+    .querySelectorAll<HTMLElement>(`[${TRANSLATION_ATTR}][${TRANSLATION_FOR_ATTR}]`)
+    .forEach((element) => {
+      const blockIndex = Number(element.getAttribute(TRANSLATION_FOR_ATTR))
+      if (!Number.isInteger(blockIndex) || !isTranslationReady(element)) return
+      out.push({ blockIndex, element })
+    })
+  return out
 }
 
 /** Fold/unfold a single translation node. Collapsed nodes keep a visible
@@ -155,6 +193,10 @@ export function ensureTranslationStyle(doc: Document): void {
     `.cn-translation.${COLLAPSED_CLASS}{padding:4px 10px;font-size:12px;color:#6b7280;font-style:italic;` +
     'background:rgba(107,114,128,.08);border-left-color:#9ca3af}' +
     `.cn-translation.${PENDING_CLASS}{color:#9ca3af;font-style:italic;` +
-    'background:rgba(156,163,175,.10);border-left-color:#d1d5db}'
+    'background:rgba(156,163,175,.10);border-left-color:#d1d5db}' +
+    `.cn-translation.${FAILED_CLASS}{color:#b91c1c;font-style:italic;` +
+    'background:rgba(239,68,68,.08);border-left-color:#fca5a5}' +
+    // Keep annotated text readable on the tinted translation background.
+    'mark[data-hl-id]{border-radius:2px;color:inherit}'
   doc.head.appendChild(style)
 }

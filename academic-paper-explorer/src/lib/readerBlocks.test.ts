@@ -12,6 +12,9 @@ import {
   setTranslationsVisible,
   toggleTranslation,
   ensureTranslationStyle,
+  translationNodeFor,
+  isTranslationReady,
+  readyTranslationNodes,
   SOURCE_ATTR,
   TRANSLATION_ATTR,
 } from './readerBlocks'
@@ -216,5 +219,51 @@ describe('restoreCachedTranslations', () => {
     restoreCachedTranslations(d, blocks, () => '你好')
     restoreCachedTranslations(d, blocks, () => '你好')
     expect(d.querySelectorAll(`[${TRANSLATION_ATTR}]`)).toHaveLength(1)
+  })
+})
+
+describe('translation highlighting helpers', () => {
+  it('resolves a translation node by its source block index', () => {
+    const d = doc('<p>Hello world</p>')
+    insertTranslation(d, collectBlocks(d)[0], '3', '你好')
+    expect(translationNodeFor(d, 3)?.textContent).toBe('你好')
+    expect(translationNodeFor(d, 4)).toBeNull()
+  })
+
+  it('only reports finished nodes as ready to highlight', () => {
+    const d = doc('<p>One here</p><p>Two here</p><p>Third here</p>')
+    const blocks = collectBlocks(d)
+    const pending = insertPlaceholder(d, blocks[0], '0') as HTMLElement
+    insertPlaceholder(d, blocks[1], '1')
+    const finished = insertTranslation(d, blocks[2], '2', '第三') as HTMLElement
+    failPendingTranslations(d)
+
+    expect(isTranslationReady(null)).toBe(false)
+    expect(isTranslationReady(pending)).toBe(false)
+    expect(pending.classList.contains('cn-translation--failed')).toBe(true)
+    expect(finished.classList.contains('cn-translation--failed')).toBe(false)
+    expect(isTranslationReady(finished)).toBe(true)
+    expect(readyTranslationNodes(d).map((r) => r.blockIndex)).toEqual([2])
+  })
+
+  it('drops the failed mark when a block is retried', () => {
+    const d = doc('<p>Hello world</p>')
+    const block = collectBlocks(d)[0]
+    markBlock(block, '0')
+    insertPlaceholder(d, block, '0')
+    failPendingTranslations(d)
+    updateTranslation(d, '0', '你好，世界')
+    expect(isTranslationReady(translationNodeFor(d, 0))).toBe(true)
+  })
+
+  it('reports a collapsed node as unavailable until it is expanded again', () => {
+    const d = doc('<p>Hello world</p>')
+    const node = insertTranslation(d, collectBlocks(d)[0], '0', '你好') as HTMLElement
+    toggleTranslation(node)
+    expect(isTranslationReady(node)).toBe(false)
+    expect(readyTranslationNodes(d)).toHaveLength(0)
+    toggleTranslation(node)
+    expect(isTranslationReady(node)).toBe(true)
+    expect(readyTranslationNodes(d)).toHaveLength(1)
   })
 })

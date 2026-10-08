@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   rangeToAnchor,
+  rangeToTarget,
   anchorToRange,
   applyHighlight,
+  paintHighlight,
   removeHighlightNodes,
   clearHighlights,
   parseHighlights,
@@ -11,6 +13,7 @@ import {
   removeHighlight,
   colorCss,
   type Highlight,
+  type HighlightTarget,
 } from './highlights'
 
 function doc(html: string): Document {
@@ -110,5 +113,132 @@ describe('map helpers', () => {
 
   it('maps colours to css', () => {
     expect(colorCss('yellow')).toMatch(/^#|rgb/)
+  })
+})
+
+describe('translation surface anchors', () => {
+  function translatedDoc(): { d: Document; cell: Element; node: HTMLElement } {
+    const d = doc(
+      '<table><tr><td>Cell text</td></tr></table>' +
+        '<div data-cn-translation data-cn-for="0" class="cn-translation">你好，世界</div>',
+    )
+    return {
+      d,
+      cell: d.querySelector('td')!,
+      node: d.querySelector<HTMLElement>('[data-cn-translation]')!,
+    }
+  }
+
+  it('tags an anchor recorded against a translation node', () => {
+    const { d, node } = translatedDoc()
+    const range = d.createRange()
+    range.setStart(node.firstChild!, 0)
+    range.setEnd(node.firstChild!, 2)
+
+    expect(rangeToAnchor(range, [node], 'translation')).toEqual({
+      blockIndex: 0,
+      start: 0,
+      end: 2,
+      surface: 'translation',
+    })
+    // The source layer keeps its historical shape (no `surface` field).
+    expect(rangeToAnchor(range, [node])).toEqual({ blockIndex: 0, start: 0, end: 2 })
+  })
+
+  it('prefers the translation target for a node nested inside its source block', () => {
+    // A table-cell translation is appended *inside* the <td>, so the source
+    // target would otherwise win and store offsets against mixed text.
+    const d = doc('<table><tr><td>Cell text</td></tr></table>')
+    const cell = d.querySelector('td')!
+    const node = d.createElement('div')
+    node.setAttribute('data-cn-translation', '')
+    node.setAttribute('data-cn-for', '0')
+    node.textContent = '单元格'
+    cell.appendChild(node)
+
+    const range = d.createRange()
+    range.setStart(node.firstChild!, 0)
+    range.setEnd(node.firstChild!, 3)
+    const targets: HighlightTarget[] = [
+      { element: node, blockIndex: 0, surface: 'translation' },
+      { element: cell, blockIndex: 0 },
+    ]
+    expect(rangeToTarget(range, targets)?.surface).toBe('translation')
+  })
+
+  it('paints a translation highlight and repaints it without nesting marks', () => {
+    const { d, node } = translatedDoc()
+    const hl: Highlight = {
+      id: 'h1',
+      blockIndex: 0,
+      start: 0,
+      end: 2,
+      surface: 'translation',
+      text: '你好',
+      color: 'green',
+    }
+    expect(paintHighlight(d, node, hl)).toBe(true)
+    expect(paintHighlight(d, node, hl)).toBe(true)
+    const marks = d.querySelectorAll('mark[data-hl-id="h1"]')
+    expect(marks).toHaveLength(1)
+    expect(marks[0].textContent).toBe('你好')
+    expect(node.textContent).toBe('你好，世界')
+  })
+
+  it('refuses to paint when the target is gone or the text no longer fits', () => {
+    const { d, node } = translatedDoc()
+    const hl: Highlight = {
+      id: 'h1',
+      blockIndex: 0,
+      start: 0,
+      end: 99,
+      surface: 'translation',
+      text: 'x',
+      color: 'yellow',
+    }
+    expect(paintHighlight(d, node, hl)).toBe(false)
+    expect(paintHighlight(d, null, hl)).toBe(false)
+    expect(d.querySelector('mark')).toBeNull()
+  })
+
+  it('strips leftover marks before repainting at the same id', () => {
+    const { d, node } = translatedDoc()
+    const hl: Highlight = {
+      id: 'h1',
+      blockIndex: 0,
+      start: 0,
+      end: 2,
+      surface: 'translation',
+      text: '你好',
+      color: 'yellow',
+    }
+    paintHighlight(d, node, hl)
+    removeHighlightNodes(d, 'h1')
+    paintHighlight(d, node, { ...hl, color: 'pink' })
+    expect(d.querySelectorAll('mark[data-hl-id="h1"]')).toHaveLength(1)
+  })
+
+  it('round-trips a translation anchor through parse/serialize', () => {
+    const hl: Highlight = {
+      id: 'h1',
+      blockIndex: 2,
+      start: 1,
+      end: 4,
+      surface: 'translation',
+      text: '你好',
+      color: 'yellow',
+    }
+    const map = withHighlight({}, 'p1', hl)
+    expect(parseHighlights(serializeHighlights(map))).toEqual(map)
+  })
+
+  it('falls back to the source layer for a missing or unknown surface', () => {
+    const raw = JSON.stringify({
+      p1: [
+        { id: 'a', blockIndex: 0, start: 0, end: 1, text: 'x', color: 'yellow' },
+        { id: 'b', blockIndex: 1, start: 0, end: 1, text: 'y', color: 'yellow', surface: 'nope' },
+      ],
+    })
+    expect(parseHighlights(raw).p1.map((h) => h.surface)).toEqual([undefined, undefined])
   })
 })

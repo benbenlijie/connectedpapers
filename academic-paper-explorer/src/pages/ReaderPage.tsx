@@ -16,21 +16,26 @@ import { useReadingStore } from '../store/useReadingStore'
 import { READING_STATUSES, type ReadingStatus } from '../lib/reading'
 import { useHighlightsStore } from '../store/useHighlightsStore'
 import {
-  anchorToRange,
-  applyHighlight,
-  clearHighlights,
-  rangeToAnchor,
+  rangeToTarget,
   removeHighlightNodes,
   HIGHLIGHT_COLORS,
+  type Highlight,
   type HighlightAnchor,
   type HighlightColor,
 } from '../lib/highlights'
+import {
+  highlightTargets,
+  paint,
+  repaintTranslations,
+  restoreHighlights,
+} from '../lib/readerHighlights'
 import {
   collectBlocks,
   blockSourceText,
   ensureTranslationStyle,
   failPendingTranslations,
   insertPlaceholder,
+  isTranslationReady,
   removeTranslations,
   restoreCachedTranslations,
   toggleTranslation,
@@ -166,14 +171,6 @@ const ReaderPage: React.FC = () => {
     const bs = collectBlocks(doc)
     blocksRef.current = bs
 
-    clearHighlights(doc)
-    for (const hl of useHighlightsStore.getState().highlights[readingKey] ?? []) {
-      const block = bs[hl.blockIndex]
-      if (!block) continue
-      const range = anchorToRange(doc, block, hl.start, hl.end)
-      if (range) applyHighlight(doc, range, hl.id, hl.color)
-    }
-
     if (!translatingRef.current) {
       const restored = restoreCachedTranslations(doc, bs, (text) => getCachedTranslation(target, text))
       if (restored > 0) {
@@ -185,14 +182,31 @@ const ReaderPage: React.FC = () => {
       }
     }
 
+    // Restore after the cached translations exist, so translation anchors find
+    // their node to paint onto.
+    restoreHighlights(doc, bs, useHighlightsStore.getState().highlights[readingKey] ?? [])
+
     doc.addEventListener('click', (e) => {
       const mark = (e.target as Element | null)?.closest?.('mark[data-hl-id]') as HTMLElement | null
       if (mark) {
         setActiveHl(mark.getAttribute('data-hl-id'))
         return
       }
+      // A click can land right after a drag that selected translated text.
+      // Keep the selection (and its pending highlight) instead of folding the
+      // translation away underneath it.
+      const sel = doc.getSelection()
+      if (sel && !sel.isCollapsed && sel.toString().trim()) return
       const node = (e.target as Element | null)?.closest?.(`[${TRANSLATION_ATTR}]`) as HTMLElement | null
-      if (node) toggleTranslation(node)
+      if (!node) return
+      toggleTranslation(node)
+      const blockIndex = Number(node.getAttribute(TRANSLATION_FOR_ATTR))
+      // Expanding puts the translated text back, so its marks must be repainted.
+      if (Number.isInteger(blockIndex) && isTranslationReady(node)) {
+        const stored = useHighlightsStore.getState().highlights[readingKey] ?? []
+        repaintTranslations(doc, bs, stored, [blockIndex])
+      }
+      setActiveHl(null)
     })
 
     doc.addEventListener('mouseup', () => {
@@ -200,7 +214,7 @@ const ReaderPage: React.FC = () => {
       const text = sel?.toString().trim() ?? ''
       if (!text || !sel || sel.rangeCount === 0) return
       setSelection(text)
-      const anchor = rangeToAnchor(sel.getRangeAt(0), bs)
+      const anchor = rangeToTarget(sel.getRangeAt(0), highlightTargets(doc, bs))
       if (anchor) {
         setPendingAnchor(anchor)
         setPendingText(text)
@@ -224,20 +238,17 @@ const ReaderPage: React.FC = () => {
     (color: HighlightColor) => {
       if (!pendingAnchor) return
       const id = globalThis.crypto?.randomUUID?.() ?? `hl-${Date.now()}`
-      addHighlight(readingKey, {
+      const hl: Highlight = {
         id,
         ...pendingAnchor,
         text: pendingText,
         color,
         ...(noteDraft.trim() ? { note: noteDraft.trim() } : {}),
         createdAt: new Date().toISOString(),
-      })
-      const doc = frameRef.current?.contentDocument
-      const block = blocksRef.current[pendingAnchor.blockIndex]
-      if (doc && block) {
-        const range = anchorToRange(doc, block, pendingAnchor.start, pendingAnchor.end)
-        if (range) applyHighlight(doc, range, id, color)
       }
+      addHighlight(readingKey, hl)
+      const doc = frameRef.current?.contentDocument
+      if (doc) paint(doc, blocksRef.current, hl)
       setPendingAnchor(null)
       setPendingText('')
       setNoteDraft('')
@@ -262,12 +273,9 @@ const ReaderPage: React.FC = () => {
       const doc = frameRef.current?.contentDocument
       if (doc) removeHighlightNodes(doc, activeHl)
       deleteHighlight(readingKey, activeHl)
-      addHighlight(readingKey, { ...hl, color })
-      const block = blocksRef.current[hl.blockIndex]
-      if (doc && block) {
-        const range = anchorToRange(doc, block, hl.start, hl.end)
-        if (range) applyHighlight(doc, range, hl.id, color)
-      }
+      const next: Highlight = { ...hl, color }
+      addHighlight(readingKey, next)
+      if (doc) paint(doc, blocksRef.current, next)
     },
     [activeHl, readingKey, deleteHighlight, addHighlight],
   )
@@ -279,11 +287,18 @@ const ReaderPage: React.FC = () => {
     scrollAbortRef.current?.abort()
     scrollAbortRef.current = null
     if (doc) removeTranslations(doc)
+    // A translation highlight's marks vanish with its node; close the bar so it
+    // does not offer to edit something that is no longer on screen.
+    const active = activeHl
+    const stored = useHighlightsStore.getState().highlights[readingKey] ?? []
+    if (active && stored.some((h) => h.id === active && h.surface === 'translation')) {
+      setActiveHl(null)
+    }
     setTranslated(false)
     setTranslating(false)
     setProgress({ done: 0, total: 0 })
     setTranslateError(null)
-  }, [])
+  }, [activeHl, readingKey])
 
   const startTranslate = useCallback(
     (lang: string, doc: Document, blocks: Element[]) => {
@@ -321,6 +336,10 @@ const ReaderPage: React.FC = () => {
             if (stale()) break
             batch.forEach((i, k) => updateTranslation(doc, String(i), result.translations[k]))
             batch.forEach((i) => queue.markDone(i))
+            // Finishing a batch rewrote those nodes' text; put their stored
+            // highlights back on top of the fresh translation.
+            const stored = useHighlightsStore.getState().highlights[readingKey] ?? []
+            repaintTranslations(doc, blocks, stored, batch)
             setProgress({ done: queue.doneCount(), total: blocks.length })
           }
         } catch (e) {
@@ -371,7 +390,7 @@ const ReaderPage: React.FC = () => {
       doc.addEventListener('scroll', scheduleScan, { passive: true, signal: abort.signal })
       scan()
     },
-    [providers],
+    [providers, readingKey],
   )
 
   const toggleTranslate = useCallback(() => {
@@ -534,6 +553,9 @@ const ReaderPage: React.FC = () => {
             <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-800/95 px-3 py-2 text-xs text-white shadow-lg">
               {pendingAnchor ? (
                 <>
+                  {pendingAnchor.surface === 'translation' && (
+                    <span className="rounded bg-blue-600/80 px-1 py-0.5 text-[10px] text-blue-50">译文</span>
+                  )}
                   <span className="max-w-[14rem] truncate text-gray-300">{pendingText}</span>
                   {HIGHLIGHT_COLORS.map((c) => (
                     <button

@@ -1,9 +1,10 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ReaderPage from './ReaderPage'
 import { useReadingStore } from '../store/useReadingStore'
+import { useHighlightsStore } from '../store/useHighlightsStore'
 import { clearProviderCache } from '../lib/translator'
 
 const ARTICLE = `<!DOCTYPE html><html><head><title>Paper</title></head><body>
@@ -29,6 +30,7 @@ beforeEach(() => {
   localStorage.clear()
   clearProviderCache()
   useReadingStore.setState({ entries: {} })
+  useHighlightsStore.setState({ highlights: {} })
   mockProviders = []
   globalThis.fetch = vi.fn(async (url: unknown) => {
     if (String(url).includes('/api/llm/status')) {
@@ -94,5 +96,51 @@ describe('ReaderPage', () => {
     renderReader('/read/2401.00001?pid=p1')
     await screen.findByTestId('reader-frame')
     await waitFor(() => expect(useReadingStore.getState().entries.p1?.status).toBe('reading'))
+  })
+
+  it('highlights translated text as well as the English source', async () => {
+    renderReader()
+    const frame = (await screen.findByTestId('reader-frame')) as HTMLIFrameElement
+    const doc = frame.contentDocument!
+    // jsdom does not load `srcdoc`, so give the iframe a real body first.
+    doc.documentElement.innerHTML = '<head><title>Paper</title></head><body><p>hello world</p></body>'
+    // Bind the reader's in-iframe listeners (idempotent: a real load may have
+    // done it already).
+    frame.dispatchEvent(new Event('load'))
+
+    const block = doc.querySelector('p')!
+    block.setAttribute('data-cn-src', '0')
+    const node = doc.createElement('div')
+    node.setAttribute('data-cn-translation', '')
+    node.setAttribute('data-cn-for', '0')
+    node.className = 'cn-translation'
+    node.textContent = '你好，世界'
+    block.insertAdjacentElement('afterend', node)
+
+    const range = doc.createRange()
+    range.setStart(node.firstChild!, 0)
+    range.setEnd(node.firstChild!, 2)
+    const sel = doc.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    await act(async () => {
+      doc.dispatchEvent(new Event('mouseup'))
+    })
+
+    expect(await screen.findByText('译文')).toBeInTheDocument()
+    // The click that trails a text drag must not fold the translation out from
+    // under the pending annotation.
+    node.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(node.textContent).toBe('你好，世界')
+
+    fireEvent.click(screen.getByLabelText('高亮-绿'))
+    expect(node.querySelector('mark[data-hl-id]')?.textContent).toBe('你好')
+    expect(useHighlightsStore.getState().highlights['2401.00001']?.[0]).toMatchObject({
+      blockIndex: 0,
+      start: 0,
+      end: 2,
+      surface: 'translation',
+      color: 'green',
+    })
   })
 })
