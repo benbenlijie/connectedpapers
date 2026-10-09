@@ -13,6 +13,7 @@
 #   VITE_BASE=/papers/         frontend base path (must match the nginx sub-path)
 #   SERVICE=connectedpapers    systemd unit name
 #   PUBLIC_URL=https://watchdeep.net/papers/
+#   REMOTE_BUN=/root/.bun/bin/bun   remote bun binary (used when not on PATH)
 set -euo pipefail
 
 REMOTE="${REMOTE:-webserver}"
@@ -20,6 +21,7 @@ DIR="${DIR:-/opt/connectedpapers}"
 VITE_BASE="${VITE_BASE:-/papers/}"
 SERVICE="${SERVICE:-connectedpapers}"
 PUBLIC_URL="${PUBLIC_URL:-https://watchdeep.net/papers/}"
+REMOTE_BUN="${REMOTE_BUN:-/root/.bun/bin/bun}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -46,9 +48,11 @@ rsync -az --delete \
 
 # The server now has a runtime dependency (unpdf, for the PDF text fallback) and
 # node_modules is excluded from the sync, so the remote installs it itself.
+# bun is often missing from a non-interactive ssh PATH (the systemd unit uses an
+# absolute path), so fall back to REMOTE_BUN.
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   echo "==> bun install on $REMOTE"
-  ssh "$REMOTE" "cd $DIR && bun install --frozen-lockfile --production"
+  ssh "$REMOTE" "cd $DIR && bun_bin=\$(command -v bun || echo '$REMOTE_BUN') && \"\$bun_bin\" install --frozen-lockfile --production"
 else
   echo "==> skip bun install (SKIP_INSTALL=1)"
 fi
