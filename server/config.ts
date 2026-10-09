@@ -37,6 +37,22 @@ export const config = {
     embeddingK: num(Bun.env.EMBEDDING_K, 5),
     embeddingMinSim: num(Bun.env.EMBEDDING_MIN_SIM, 0.8),
   },
+  connect: {
+    /** Live S2 batch fetches allowed while hunting for a connection. */
+    maxExpansions: num(Bun.env.CONNECT_MAX_EXPANSIONS, 6),
+    batchSize: num(Bun.env.CONNECT_BATCH_SIZE, 30),
+    frontierLimit: num(Bun.env.CONNECT_FRONTIER_LIMIT, 60),
+    /** References / citations kept per expanded paper. */
+    refLimit: num(Bun.env.CONNECT_REF_LIMIT, 40),
+    citeLimit: num(Bun.env.CONNECT_CITE_LIMIT, 25),
+    maxHops: num(Bun.env.CONNECT_MAX_HOPS, 6),
+    maxPaths: num(Bun.env.CONNECT_MAX_PATHS, 3),
+    maxExecutionMs: num(Bun.env.CONNECT_MAX_MS, 25000),
+    /** Cosine similarity above which two papers count as semantically linked. */
+    semanticMinSim: num(Bun.env.CONNECT_SEMANTIC_MIN_SIM, 0.75),
+    /** Force offline: only walk relations already stored in SQLite. */
+    localOnly: (Bun.env.CONNECT_LOCAL_ONLY ?? '0') === '1',
+  },
   arxiv: { base: 'http://export.arxiv.org/api' },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',

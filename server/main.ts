@@ -10,6 +10,7 @@ import { llmStatusRoute } from './routes/llm'
 import { aiSessionRoute, aiChatRoute, aiHistoryRoute, aiStreamRoute, aiAbortRoute } from './routes/ai'
 import { neighborsRoute } from './routes/neighbors'
 import { lineageRoute } from './routes/lineage'
+import { connectRoute } from './routes/connect'
 import { paperSearchRoute, paperSectionRoute } from './routes/paper'
 import { readerRoute } from './routes/reader'
 import { INTERNAL_TOKEN } from './internal-token'
@@ -150,6 +151,7 @@ server = Bun.serve({
       if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
       if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
       if (p === '/api/lineage' && req.method === 'POST') return await lineageRoute(req)
+      if (p === '/api/connect' && req.method === 'POST') return await connectRoute(req)
       if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
       if (p === '/api/ai/session' && req.method === 'POST') return await aiSessionRoute(req, db, opencodeClient)
       if (p === '/api/ai/chat' && req.method === 'POST') return await aiChatRoute(req, opencodeClient, db)

@@ -78,7 +78,16 @@ export function pagerank(nodes: GraphNode[], edges: GraphEdge[], damping = 0.85,
 const DEPTH_COLORS = ['#ff6b35', '#059669', '#7c3aed', '#dc2626', '#6b7280']
 const colorFor = (d: number) => DEPTH_COLORS[Math.min(d, DEPTH_COLORS.length - 1)]
 
-function toNode(p: S2Paper, isRoot: boolean, depth: number): GraphNode {
+/**
+ * Build a render-ready graph node. Accepts partial S2 payloads so reference /
+ * citation list entries (which only carry paperId, title, year, citationCount)
+ * can become nodes too.
+ */
+export function graphNodeFromS2(
+  p: Partial<S2Paper> & { paperId: string },
+  isRoot: boolean,
+  depth: number,
+): GraphNode {
   return {
     id: p.paperId, label: p.title ?? '未知标题', title: p.title ?? '', abstract: p.abstract,
     year: p.year, citationCount: p.citationCount ?? 0,
@@ -176,7 +185,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
   const seen = new Set<string>([root.paperId])
   const canonicalOf = new Map<string, string>([[root.paperId, canonicalKeyFromS2(root)]])
   const refsByNode = new Map<string, Set<string>>()
-  nodes.set(root.paperId, toNode(root, true, 0))
+  nodes.set(root.paperId, graphNodeFromS2(root, true, 0))
   upsertPaper(root)
 
   let frontier = [root]
@@ -232,7 +241,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     fetched.forEach((p) => {
       if (!p || nodes.size >= maxNodes) return
       seen.add(p.paperId)
-      nodes.set(p.paperId, toNode(p, false, level + 1))
+      nodes.set(p.paperId, graphNodeFromS2(p, false, level + 1))
       canonicalOf.set(p.paperId, canonicalKeyFromS2(p))
       upsertPaper(p)
       nextFrontier.push(p)
@@ -344,7 +353,7 @@ async function addRelatedNodes(
       fetched.forEach((p, i) => {
         if (!p || seen.has(p.paperId) || nodes.size >= maxNodes) return
         seen.add(p.paperId)
-        nodes.set(p.paperId, toNode(p, false, 1))
+        nodes.set(p.paperId, graphNodeFromS2(p, false, 1))
         canonicalOf.set(p.paperId, canonicalKeyFromS2(p))
         upsertPaper(p)
         edges.push({ from: root.paperId, to: p.paperId, type: 'related', weight: Math.max(1, config.related.recommendLimit - i) })
