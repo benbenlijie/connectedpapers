@@ -160,3 +160,7 @@ data/
 *.db-journal
 server/.env
 supabase/.temp/
+
+# 内部规划/设计文档（agent 工作流产物，不属于对外仓库内容）
+# 文件保留在本地，只是不再跟踪；docs/images/ 是对外素材，仍然跟踪。
+docs/superpowers/
