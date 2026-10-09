@@ -1,0 +1,105 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+_Nothing yet._
+
+## [0.1.0] - 2026-10-09
+
+This is the first tagged release. It covers the whole project to date, so the entries
+below describe capabilities rather than a diff against a previous tag.
+
+### Added
+
+- **Paper search** across Semantic Scholar and OpenAlex in parallel, with duplicate
+  merging, relevance ranking, and lookup of a single paper by DOI, arXiv id, OpenAlex
+  work id, or Semantic Scholar id. Local, reusable keyword history.
+- **Interactive citation-network graph** built by a breadth-first crawl of references
+  and citations, with PageRank influence, node/neighbour highlighting, and a
+  renderer that uses `react-force-graph` (2D canvas by default, lazily loaded
+  three.js 3D view).
+- **Graph analysis and navigation**: Louvain community detection with cluster
+  colouring, clickable edge-type toggles, a draggable/playable timeline that limits the
+  graph to a selected year, encoding by cluster/year/field/citations/PageRank, a
+  minimap, lazy relevance-prioritized node expansion, and a node context menu (rebuild
+  from node, search by title, expand, add to comparison, open the source).
+- **Multi-source related edges**: Semantic Scholar recommendations, OpenAlex related
+  works (with an arXiv-title fallback), bibliographic coupling, and SPECTER2 semantic
+  nearest neighbours, deduplicated by canonical DOI/arXiv identity.
+- **Research lineage**: a paper's direct predecessors (references) and successors
+  (citations), ranked by influence, citation count, and recency, without a full graph
+  crawl (`POST /api/lineage`).
+- **"How are two papers related?"** (`POST /api/connect`): finds connection paths
+  through stored relations, expands online when needed, and falls back to semantic
+  similarity, returning ranked paths with an explanation for each hop.
+- **Shareable deep links**: the selected paper, filters, encoding, and view state sync
+  to the address bar, so a shared URL or a refresh restores the view.
+- **Export**: PNG and JSON for the visible graph, BibTeX and CSV for the visible
+  nodes, plus a full fetched-network JSON export.
+- **Local-first knowledge management**: per-paper notes with graph markers, favourites,
+  collections, saved searches, a reading queue with progress tracking, and reader
+  highlights with colour-coded annotations — all persisted in the browser.
+- **Dual-paper comparison**: two side-by-side citation graphs that share filters and
+  encoding while keeping independent selection and highlighting.
+- **In-app arXiv reader** at `/read/:arxivId`: full-text HTML with a section outline
+  and figures, plus an arXiv abs/PDF fallback for papers with no HTML build.
+- **Immersive bilingual translation** in the reader: paragraph-level translation below
+  each source paragraph, collapsible per paragraph, backed by configurable LLM
+  providers (any OpenAI-compatible Chat Completions endpoint, or the browser's built-in
+  Translator API) with automatic fallback, caching, and viewport-driven lazy work.
+- **AI reading assistant**: a per-paper, multi-turn chat panel driven by a local
+  `opencode serve` agent. Answers are grounded in the paper itself via retrieval tools
+  (`paper_search` / `paper_section`) instead of model memory, streamed over SSE with
+  visible tool activity.
+- **Self-hosted single-process backend**: Bun + `bun:sqlite` (`data/app.db`), static
+  hosting of the built frontend, SPA fallback, and an in-process async job queue with a
+  materialized network cache.
+- **Optional public-deployment gate**: an `ACCESS_TOKEN` gate for all requests with a
+  constant-time comparison and `?token=` → HttpOnly cookie flow, per-IP rate limiting
+  (`RATE_LIMIT_PER_MIN`, `TRUST_PROXY`), sub-path mounting via `VITE_BASE`, and a
+  one-command deploy script with a deployment guide.
+- **Configurable upstream access**: optional `SEMANTIC_SCHOLAR_API_KEY` and
+  `OPENALEX_API_KEY`, per-source minimum request intervals, and retry with backoff.
+- **Test suite and CI**: `bun test` for the backend, Vitest for the frontend, plus
+  typecheck/lint/build, run by a GitHub Actions workflow.
+
+### Changed
+
+- Graph rendering moved from a hand-written Canvas 2D renderer with a custom
+  WebWorker `d3-force` layout to `react-force-graph`, keeping the 3D three.js bundle
+  code-split and out of the initial load.
+- Translation in the reader became cached, lazy, and viewport-driven, with progressive
+  output and reversible paragraph folds.
+- The reader's AI assistant moved to the `opencode` agent harness with token-guarded
+  paper-retrieval routes, so answers cite the paper's own sections.
+- Upstream clients now rate-limit per source and support OpenAlex API keys instead of
+  relying only on anonymous shared quotas.
+
+### Fixed
+
+- Search results are ranked by relevance rather than raw citation count.
+- The graph timeline keeps a stable range while filters change.
+- Deep links rebuild the complete graph, including when opened from a shared URL.
+- Reader correctness: papers without an arXiv HTML build are readable, finished
+  translations stay selectable, and translated text can be highlighted like the source.
+- Library papers are keyed consistently between the list and the details panel.
+- The server exits cleanly on `SIGINT`/`SIGTERM`, and the Bun `idleTimeout` was raised so
+  AI SSE streams are not cut off at 10 seconds.
+- The deploy script finds Bun on the remote host when it is not on `PATH`.
+- The 3D graph view shows node titles.
+- Rate limiting can no longer be bypassed by forging a client address: the limiter keyed
+  on the _left-most_ `X-Forwarded-For` entry, so behind a proxy that appends to that
+  header a visitor could pick — and rotate — their own bucket. The client address now
+  prefers `X-Real-IP` and otherwise reads the right-most forwarded entry, and the bundled
+  nginx configs overwrite the header with `$remote_addr` instead of appending.
+- `scripts/setup.sh` installs the backend's root dependency (`unpdf`), which it had
+  skipped, so the documented three-command quick start no longer produces a server that
+  fails on PDF text extraction.
+
+[Unreleased]: https://github.com/benbenlijie/connectedpapers/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/benbenlijie/connectedpapers/releases/tag/v0.1.0

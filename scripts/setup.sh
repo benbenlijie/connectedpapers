@@ -17,4 +17,7 @@ fi
 
 (cd academic-paper-explorer && pnpm install)
 
+# 后端根依赖（unpdf，用于 PDF 取文）；缺了它 server 会在读取 PDF 论文时失败。
+bun install
+
 echo "初始化完成。运行： bun run build:web && bun run server"
