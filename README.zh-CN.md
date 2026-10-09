@@ -9,7 +9,7 @@
 
 **[在线 Demo →](https://watchdeep.net/paper-demo/)** · [English](README.md) · [架构说明](ARCHITECTURE.md)
 
-![引用网络图](docs/images/network-graph.png)
+![引用网络图（动图）](docs/images/graph-demo.gif)
 
 自托管、本地优先：一个 Bun 进程、一个 SQLite 文件，不需要账号，不依赖云端。
 
@@ -46,6 +46,8 @@ Connected Papers 这类工具展示的是**单篇**论文的邻域，回答的�
 
 ### 探索
 
+![引用网络图](docs/images/network-graph.png)
+
 - **搜索**：聚合 Semantic Scholar 与 OpenAlex，按 DOI/arXiv 归一化去重；关键词历史保存在本地，聚焦时可直接复用。
 - **交互式引用网络**：节点按 PageRank 编码、Louvain 社区检测与聚类配色、边类型可逐类显示/隐藏、底部时间轴可拖动或播放以观察领域演进。
 - **2D canvas / 3D** 两种受力图视图。
@@ -68,6 +70,8 @@ Connected Papers 这类工具展示的是**单篇**论文的邻域，回答的�
 - **高亮与批注**：四种颜色，本地保存。
 
 ![阅读器与双语翻译](docs/images/reader-translation.png)
+
+![AI 阅读助手](docs/images/ai-assistant.png)
 
 ### 保存与分享
 

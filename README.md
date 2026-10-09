@@ -10,7 +10,7 @@
 
 **[Live demo →](https://watchdeep.net/paper-demo/)** · [中文说明](README.zh-CN.md) · [Architecture](ARCHITECTURE.md)
 
-![Citation network graph](docs/images/network-graph.png)
+![The citation network, live](docs/images/graph-demo.gif)
 
 Self-hosted and local-first: one Bun process, one SQLite file, no account, no cloud.
 
@@ -47,6 +47,8 @@ Pick any two papers and the app searches for the chain that links them, then exp
 
 ### Explore
 
+![Citation network graph](docs/images/network-graph.png)
+
 - **Search** across Semantic Scholar and OpenAlex, merged and de-duplicated by DOI/arXiv id, with locally remembered keyword history.
 - **Interactive citation network** — PageRank-weighted nodes, Louvain community clustering, per-edge-type visibility toggles, and a timeline you can scrub or play back to see a field grow.
 - **2D canvas or 3D** force graph, whichever suits the question.
@@ -69,6 +71,8 @@ Two papers side by side, each with its own citation graph, sharing the filters a
 - **Highlights and annotations** in four colours, stored locally.
 
 ![Reader with bilingual translation](docs/images/reader-translation.png)
+
+![AI reading assistant](docs/images/ai-assistant.png)
 
 ### Keep and share
 
