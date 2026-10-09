@@ -37,9 +37,28 @@ test('safeEqual compares without throwing on length mismatch', () => {
 })
 
 test('clientIpFrom honors trustProxy', () => {
-  const h = new Headers({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' })
+  const h = new Headers({ 'x-forwarded-for': '1.2.3.4' })
   expect(clientIpFrom(h, true, '127.0.0.1')).toBe('1.2.3.4')
   expect(clientIpFrom(h, false, '127.0.0.1')).toBe('127.0.0.1')
+})
+
+test('clientIpFrom trusts the proxy header over a client-supplied one', () => {
+  const h = new Headers({ 'x-real-ip': '203.0.113.9', 'x-forwarded-for': '10.0.0.1' })
+  expect(clientIpFrom(h, true, '127.0.0.1')).toBe('203.0.113.9')
+})
+
+// A client can send X-Forwarded-For itself; a proxy that appends leaves the
+// forged value on the left. Reading the right-most entry keeps the rate-limit
+// bucket out of the client's control.
+test('clientIpFrom ignores forged entries on the left of a forwarded list', () => {
+  const h = new Headers({ 'x-forwarded-for': '198.51.100.9, 203.0.113.7' })
+  expect(clientIpFrom(h, true, '127.0.0.1')).toBe('203.0.113.7')
+})
+
+test('clientIpFrom handles empty forwarded entries', () => {
+  expect(clientIpFrom(new Headers({ 'x-forwarded-for': '   ' }), true, '127.0.0.1')).toBe('127.0.0.1')
+  expect(clientIpFrom(new Headers({ 'x-forwarded-for': '1.2.3.4, ' }), true, '127.0.0.1')).toBe('1.2.3.4')
+  expect(clientIpFrom(new Headers({ 'x-real-ip': '  ' }), true, '127.0.0.1')).toBe('127.0.0.1')
 })
 
 test('cookieHeader includes Secure over https', () => {

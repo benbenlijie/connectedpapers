@@ -46,10 +46,30 @@ export function isAuthorized(headers: Headers, url: URL, expected: string | unde
   return token != null && safeEqual(token, expected)
 }
 
+/**
+ * Best-effort client identity, used to key the rate limiter. Only meaningful
+ * when the app sits behind a proxy that overwrites these headers (our nginx
+ * config sets both to $remote_addr).
+ *
+ * The proxy's own header wins, and a forwarded list is read from the right:
+ * a client can send X-Forwarded-For itself, and a proxy that *appends* puts
+ * those forged entries on the left. Trusting the left-most entry let a client
+ * pick its own rate-limit bucket (and rotate it to bypass the limit), so the
+ * right-most entry — the one appended closest to us — is the defensible choice.
+ */
 export function clientIpFrom(headers: Headers, trustProxy: boolean, fallback: string): string {
   if (trustProxy) {
+    const real = headers.get('x-real-ip')?.trim()
+    if (real) return real
     const forwarded = headers.get('x-forwarded-for')
-    if (forwarded) return forwarded.split(',')[0].trim()
+    if (forwarded) {
+      const hops = forwarded
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+      const nearest = hops[hops.length - 1]
+      if (nearest) return nearest
+    }
   }
   return fallback
 }
