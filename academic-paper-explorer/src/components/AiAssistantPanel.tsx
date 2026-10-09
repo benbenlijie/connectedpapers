@@ -102,7 +102,7 @@ const AiAssistantPanel: React.FC<Props> = ({ arxivId, selection, target, onClose
   }, [sessionId])
 
   return (
-    <aside className="flex w-80 flex-shrink-0 flex-col border-l border-gray-700 bg-gray-800">
+    <aside className="flex h-full w-full flex-col bg-gray-800">
       <div className="flex items-center justify-between border-b border-gray-700 px-3 py-2">
         <span className="flex items-center gap-1 text-sm font-medium">
           <Sparkles className="h-3 w-3" /> AI 助手

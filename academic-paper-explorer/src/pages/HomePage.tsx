@@ -6,6 +6,11 @@ import DetailsPanel from '../components/DetailsPanel'
 import ConnectionPanel from '../components/ConnectionPanel'
 import ConnectionCapsule from '../components/ConnectionCapsule'
 import FilterPanel from '../components/FilterPanel'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '../components/ui/resizable'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { useUrlSync } from '../hooks/useUrlSync'
@@ -49,10 +54,17 @@ const HomePage: React.FC = () => {
         <SearchBar />
       </div>
 
-      {/* 主要内容区域 */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* 主要内容区域：左右面板宽度可拖拽调整 */}
+      <ResizablePanelGroup direction="horizontal" autoSaveId="cpe:home-layout" className="flex-1">
         {/* 左侧论文列表 */}
-        <div className="w-80 border-r border-gray-700 bg-gray-800 overflow-hidden flex flex-col">
+        <ResizablePanel
+          id="paper-list"
+          order={1}
+          defaultSize={22}
+          minSize={14}
+          maxSize={40}
+          className="bg-gray-800 overflow-hidden flex flex-col"
+        >
           <div className="p-4 border-b border-gray-700">
             <h2 className="text-lg font-semibold text-gray-200">论文列表</h2>
           </div>
@@ -63,16 +75,19 @@ const HomePage: React.FC = () => {
           <div className="border-t border-gray-700">
             <FilterPanel />
           </div>
-        </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* 中间网络图 */}
-        <div className="flex-1 relative bg-gray-900">
+        <ResizablePanel id="graph" order={2} defaultSize={52} minSize={25} className="relative bg-gray-900">
           {selectedPaper && comparePaper ? (
-            <div className="flex h-full">
-              <div className="relative h-full min-w-0 flex-1 border-r border-gray-700">
+            <ResizablePanelGroup direction="horizontal" autoSaveId="cpe:home-compare" className="h-full">
+              <ResizablePanel id="compare-primary" order={1} defaultSize={50} minSize={20} className="relative h-full">
                 <NetworkGraph />
-              </div>
-              <div className="relative h-full min-w-0 flex-1">
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel id="compare-secondary" order={2} minSize={20} className="relative h-full">
                 <div className="absolute left-1/2 top-4 z-20 flex max-w-[80%] -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-800/90 px-3 py-1.5 text-xs text-white">
                   <span className="truncate">{comparePaper.title || '对比论文'}</span>
                   <button
@@ -93,8 +108,8 @@ const HomePage: React.FC = () => {
                   </button>
                 </div>
                 <NetworkGraph paper={comparePaper} slot="compare" />
-              </div>
-            </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
           ) : selectedPaper ? (
             <NetworkGraph />
           ) : (
@@ -117,13 +132,22 @@ const HomePage: React.FC = () => {
           )}
 
           <ConnectionPanel />
-        </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* 右侧详情面板 */}
-        <div className="w-96 border-l border-gray-700 bg-gray-800 overflow-hidden">
+        <ResizablePanel
+          id="details"
+          order={3}
+          defaultSize={26}
+          minSize={16}
+          maxSize={50}
+          className="bg-gray-800 overflow-hidden"
+        >
           <DetailsPanel />
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* 底部状态栏 */}
       <footer className="bg-gray-800 border-t border-gray-700 px-6 py-2">

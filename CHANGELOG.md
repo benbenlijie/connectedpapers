@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Resizable panels**: the home view's paper list, network graph, and details panel (plus
+  the two graphs in comparison split view) and the reader's table of contents, article,
+  and AI assistant panels can now be dragged to any width. Sizes are saved per layout in
+  `localStorage` and restored on the next visit; dividers are also keyboard operable
+  (focus one and press the arrow keys).
 
 ## [0.1.0] - 2026-10-09
 

@@ -25,6 +25,11 @@ import { apiUrl } from '../lib/apiBase'
 import { fetchProviders, getCachedTranslation, prepareBrowserTranslator, translate, type PublicProvider } from '../lib/translator'
 import { createTranslationQueue } from '../lib/translationQueue'
 import AiAssistantPanel from '../components/AiAssistantPanel'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '../components/ui/resizable'
 import { useReadingStore } from '../store/useReadingStore'
 import { READING_STATUSES, type ReadingStatus } from '../lib/reading'
 import { useHighlightsStore } from '../store/useHighlightsStore'
@@ -597,30 +602,48 @@ const ReaderPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 flex-shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-800 p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">目录</h2>
-          {outline.length === 0 ? (
-            <p className="text-xs text-gray-500">无可用目录</p>
-          ) : (
-            <ul className="space-y-1">
-              {outline.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => jumpTo(item.id)}
-                    className="w-full truncate rounded px-2 py-1 text-left text-sm text-gray-300 hover:bg-gray-700"
-                    style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
-                  >
-                    {item.text}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+      {/* 目录 / 正文 / AI 助手：面板宽度可拖拽调整 */}
+      <ResizablePanelGroup direction="horizontal" autoSaveId="cpe:reader-layout" className="flex-1">
+        <ResizablePanel
+          id="outline"
+          order={1}
+          defaultSize={16}
+          minSize={10}
+          maxSize={35}
+          className="bg-gray-800"
+        >
+          <aside className="h-full overflow-y-auto p-3">
+            <h2 className="mb-2 text-xs font-semibold uppercase text-gray-400">目录</h2>
+            {outline.length === 0 ? (
+              <p className="text-xs text-gray-500">无可用目录</p>
+            ) : (
+              <ul className="space-y-1">
+                {outline.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => jumpTo(item.id)}
+                      className="w-full truncate rounded px-2 py-1 text-left text-sm text-gray-300 hover:bg-gray-700"
+                      style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
+                    >
+                      {item.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        </ResizablePanel>
 
-        <main className="relative flex flex-1 flex-col bg-white">
+        <ResizableHandle withHandle />
+
+        <ResizablePanel
+          id="article"
+          order={2}
+          minSize={30}
+          tagName="main"
+          className="relative flex h-full flex-col bg-white"
+        >
           {(pendingAnchor || activeHl) && (
             <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-800/95 px-3 py-2 text-xs text-white shadow-lg">
               {pendingAnchor ? (
@@ -776,17 +799,22 @@ const ReaderPage: React.FC = () => {
               onLoad={handleFrameLoad}
             />
           )}
-        </main>
+        </ResizablePanel>
 
         {aiOpen && (
-          <AiAssistantPanel
-            arxivId={arxivId ?? readingKey}
-            selection={selection}
-            target={target}
-            onClose={() => setAiOpen(false)}
-          />
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="ai" order={3} defaultSize={24} minSize={16} maxSize={50} className="bg-gray-800">
+              <AiAssistantPanel
+                arxivId={arxivId ?? readingKey}
+                selection={selection}
+                target={target}
+                onClose={() => setAiOpen(false)}
+              />
+            </ResizablePanel>
+          </>
         )}
-      </div>
+      </ResizablePanelGroup>
     </div>
   )
 }
