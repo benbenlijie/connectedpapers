@@ -125,9 +125,9 @@ test('titleFromPdfText keeps the title lines and skips furniture', () => {
     'XXX-X-XXXX-XXXX-X/XX/$XX.00 ©20XX IEEE',
     'Accelerating PageRank Algorithmic Tasks with',
     'a new Programmable Hardware Architecture',
-    'Md Rownak Hossain Chowdhury, Mostafizur Rahman',
-    'University of Missouri-Kansas City',
-    'rhctmc@umkc.edu',
+    'A. Example, B. Sample',
+    'Example University',
+    'authors@example.edu',
     'Abstract— Addressing the growing demands.',
   ].join('\n')
   expect(titleFromPdfText(text)).toBe(
