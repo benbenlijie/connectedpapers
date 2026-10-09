@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('../services/api', () => ({ api: { networkWithPolling: vi.fn() } }))
 
@@ -75,8 +75,45 @@ beforeEach(() => {
     compareSelectedNodeId: null,
     expandedNodeIds: [],
     compareExpandedNodeIds: [],
+    connectionOpen: false,
+    connectionFrom: null,
+    connectionTo: null,
+    connectionRequest: null,
+    connection: null,
   })
 })
+
+/** A coupling path A -> X -> B where X only exists as a connection node. */
+const CONNECTION = {
+  from: { id: 'a', title: 'A' },
+  to: { id: 'b', title: 'B' },
+  found: true,
+  best: {
+    kind: 'coupling',
+    nodeIds: ['a', 'x', 'b'],
+    nodes: [
+      { ...NETWORK.nodes[0] },
+      {
+        id: 'x', label: 'X', title: 'X', citationCount: 1, authors: '', isRoot: false,
+        pageRankScore: 0.1, clusterId: 0, size: 20, color: '#ffffff', year: 2005,
+      },
+      { ...NETWORK.nodes[1] },
+    ],
+    edges: [
+      { from: 'a', to: 'x', type: 'reference', weight: 1 },
+      { from: 'b', to: 'x', type: 'reference', weight: 1 },
+    ],
+    hops: [],
+    hopCount: 2,
+    score: 3,
+    summary: '共同引用',
+  },
+  alternatives: [],
+  signals: {
+    sharedReferences: [], sharedCiters: [], semanticSimilarity: null, sharedFields: [], sharedAuthors: [],
+  },
+  stats: { expanded: 2, nodes: 3, edges: 2, elapsedMs: 10, source: 'local', truncated: false },
+} as any
 
 describe('NetworkGraph', () => {
   it('renders the graph after data arrives following a loading state', () => {
@@ -182,6 +219,56 @@ describe('NetworkGraph', () => {
     fireEvent.click(screen.getByTestId('node-a-rightclick'))
     fireEvent.click(screen.getByRole('menuitem', { name: '展开该节点' }))
     await waitFor(() => expect(useUiStore.getState().expandedNodeIds).toContain('a'))
+  })
+
+  it('merges a connection path into the displayed graph', () => {
+    render(<NetworkGraph />)
+    expect(screen.getByText('2 节点 · 1 边')).toBeInTheDocument()
+    // X is not in the network payload at all; it arrives with the path.
+    act(() => useUiStore.setState({ connection: CONNECTION }))
+    expect(screen.getByText('3 节点 · 3 边')).toBeInTheDocument()
+  })
+
+  it('keeps a connection path visible through filters that would hide it', () => {
+    // A timeline cut-off at 2000 would drop B (2010) and X (2005) on its own.
+    act(() => useUiStore.setState({ connection: CONNECTION, timelineYear: 2000 }))
+    render(<NetworkGraph />)
+    expect(screen.getByText('3 节点 · 3 边')).toBeInTheDocument()
+  })
+
+  it('does not draw the primary pane connection in the compare pane', () => {
+    useUiStore.setState({ connection: CONNECTION })
+    render(
+      <NetworkGraph
+        paper={{ id: 'root', title: 'Root', citation_count: 0, authors: '', source: 'semantic_scholar' }}
+        slot="compare"
+      />,
+    )
+    expect(screen.getByText('2 节点 · 1 边')).toBeInTheDocument()
+  })
+
+  it('sets the connection endpoints from the node context menu', () => {
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByText('设为关联起点'))
+    expect(useUiStore.getState().connectionFrom?.id).toBe('a')
+    expect(useUiStore.getState().connectionOpen).toBe(true)
+
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByText('设为关联终点'))
+    expect(useUiStore.getState().connectionTo?.id).toBe('a')
+  })
+
+  it('offers to clear the path only while one is on screen', () => {
+    render(<NetworkGraph />)
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    expect(screen.queryByText('清除关联路径')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('background'))
+
+    act(() => useUiStore.setState({ connection: CONNECTION }))
+    fireEvent.click(screen.getByTestId('node-a-rightclick'))
+    fireEvent.click(screen.getByText('清除关联路径'))
+    expect(useUiStore.getState().connection).toBeNull()
   })
 
   it('re-expands nodes restored from the store so a shared link keeps them', async () => {

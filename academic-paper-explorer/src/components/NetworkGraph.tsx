@@ -9,6 +9,7 @@ import { mergeNetworkData } from '../lib/graphMerge'
 import { filterGraph } from '../graph/graphFilters'
 import { graphAdapter, linkEndId, nodeToPaper, type GraphLink, type GraphNode } from '../graph/graphAdapter'
 import { pickVisibleLabels, ZOOM_LABEL_THRESHOLD } from '../graph/labelLod'
+import { connectionHighlight, ensurePathVisible } from '../graph/connectionPath'
 
 import { EDGE_COLORS, withAlpha } from '../graph/encoding'
 import { buildExportPayload, downloadCanvasPng, downloadText, exportFilename, toBibtex, toCsv } from '../graph/exportGraph'
@@ -27,7 +28,7 @@ import GraphTimeline from './graph/GraphTimeline'
 import GraphMinimap from './graph/GraphMinimap'
 import GraphTooltip from './graph/GraphTooltip'
 import GraphNodeList from './graph/GraphNodeList'
-import type { Paper, NetworkEdge, NetworkNode } from '../types/domain'
+import type { Paper, NetworkData, NetworkEdge, NetworkNode } from '../types/domain'
 
 const ForceGraph3D = React.lazy(() => import('../graph/ForceGraph3DLazy'))
 
@@ -131,6 +132,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     setCompareSelectedNodeId,
     comparePaper,
     setComparePaper,
+    connection,
+    setConnectionFrom,
+    setConnectionTo,
+    setConnectionOpen,
+    clearConnection,
     submitQuery,
     filters,
     graphView,
@@ -157,6 +163,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const expandedIds = isCompare ? compareExpandedNodeIds : expandedNodeIds
   const addExpandedId = isCompare ? addCompareExpandedNode : addExpandedNode
   const clearExpandedIds = isCompare ? setCompareExpandedNodeIds : setExpandedNodeIds
+
+  // A connection belongs to the *pair*, so it is drawn once in the primary pane
+  // rather than duplicated across the compare split.
+  const connectionPath = isCompare ? null : (connection?.best ?? null)
+  const pathActive = Boolean(connectionPath)
+  const { nodeIds: pathNodeIds, linkKeys: pathLinkKeys } = useMemo(
+    () => connectionHighlight(connectionPath),
+    [connectionPath],
+  )
 
   const selectNode = useCallback(
     (id: string | null) => {
@@ -229,9 +244,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
 
   useEffect(() => () => roRef.current?.disconnect(), [])
 
+  const connectionExtra = useMemo<NetworkData>(
+    () => (connectionPath ? { nodes: connectionPath.nodes, edges: connectionPath.edges } : { nodes: [], edges: [] }),
+    [connectionPath],
+  )
+
   const combined = useMemo(
-    () => mergeNetworkData(networkData ?? { nodes: [], edges: [] }, extra),
-    [networkData, extra],
+    () => mergeNetworkData(mergeNetworkData(networkData ?? { nodes: [], edges: [] }, extra), connectionExtra),
+    [networkData, extra, connectionExtra],
   )
 
   const { nodes: filteredNodes, edges: filteredEdges } = useMemo(() => {
@@ -242,8 +262,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       selectedVenues: filters.selectedVenues,
       timelineYear,
     })
-    return { nodes, edges: edges.filter((e) => !hiddenEdgeTypes.includes(e.type)) }
-  }, [combined, filters, timelineYear, hiddenEdgeTypes])
+    const keptEdges = edges.filter((e) => !hiddenEdgeTypes.includes(e.type))
+    return ensurePathVisible(nodes, keptEdges, connectionPath)
+  }, [combined, filters, timelineYear, hiddenEdgeTypes, connectionPath])
 
   // Year domain for the timeline slider: everything except the timeline filter,
   // otherwise the slider range collapses while dragging (feedback loop).
@@ -387,14 +408,22 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     return { neighborIds: nIds, linkKeys: lKeys }
   }, [activeId, graphData])
 
+  // Everything that must stay lit: the hovered node's neighbours plus the
+  // connection path. Labels and dimming both key off this set.
+  const highlightIds = useMemo(() => {
+    const ids = new Set(neighborIds)
+    for (const id of pathNodeIds) ids.add(id)
+    return ids
+  }, [neighborIds, pathNodeIds])
+
   const priorityLabelIds = useMemo(
-    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds, globalScale: 0, limit: 0 }),
-    [graphData, activeId, neighborIds],
+    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds: highlightIds, globalScale: 0, limit: 0 }),
+    [graphData, activeId, highlightIds],
   )
 
   const zoomLabelIds = useMemo(
-    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds, globalScale: 2, limit: 12 }),
-    [graphData, activeId, neighborIds],
+    () => pickVisibleLabels(graphData.nodes, { activeId, neighborIds: highlightIds, globalScale: 2, limit: 12 }),
+    [graphData, activeId, highlightIds],
   )
 
   // 3D labels: base on selection only (not hover) so hovering does not rebuild
@@ -412,16 +441,16 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
     return ids
   }, [graphData, activeSelectionId])
 
-  const labelIds3d = useMemo(
-    () =>
-      pickVisibleLabels(graphData.nodes, {
-        activeId: activeSelectionId,
-        neighborIds: selectedNeighborIds,
-        globalScale: 2,
-        limit: 15,
-      }),
-    [graphData, activeSelectionId, selectedNeighborIds],
-  )
+  const labelIds3d = useMemo(() => {
+    const ids = pickVisibleLabels(graphData.nodes, {
+      activeId: activeSelectionId,
+      neighborIds: selectedNeighborIds,
+      globalScale: 2,
+      limit: 15,
+    })
+    for (const id of pathNodeIds) ids.add(id)
+    return ids
+  }, [graphData, activeSelectionId, selectedNeighborIds, pathNodeIds])
 
   const rebuildFromNode = useCallback(
     (node: GraphNode) => {
@@ -494,19 +523,59 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       if (!isCompare && comparePaper?.id !== node.id) {
         items.push({ label: '加入对比', onSelect: () => compareFromNode(node) })
       }
+      items.push({
+        label: '设为关联起点',
+        onSelect: () => {
+          setConnectionFrom(nodeToPaper(node))
+          setConnectionOpen(true)
+        },
+      })
+      items.push({
+        label: '设为关联终点',
+        onSelect: () => {
+          setConnectionTo(nodeToPaper(node))
+          setConnectionOpen(true)
+        },
+      })
+      if (pathActive) {
+        items.push({ label: '清除关联路径', onSelect: () => clearConnection() })
+      }
       if (node.url) {
         items.push({ label: '打开原文', onSelect: () => window.open(node.url, '_blank', 'noopener') })
       }
       return items
     },
-    [rerootFromNode, searchFromNode, compareFromNode, isCompare, comparePaper, expandingId, expandNode],
+    [
+      rerootFromNode,
+      searchFromNode,
+      compareFromNode,
+      isCompare,
+      comparePaper,
+      expandingId,
+      expandNode,
+      setConnectionFrom,
+      setConnectionTo,
+      setConnectionOpen,
+      clearConnection,
+      pathActive,
+    ],
   )
 
   const paintNode = useCallback(
     (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
-      const dim = activeId !== null && !neighborIds.has(node.id)
+      const dim = (activeId !== null || pathActive) && !highlightIds.has(node.id)
+
+      // Connection-path nodes get an emerald halo so the chain reads at a glance
+      // even when the rest of the graph is dimmed out.
+      if (pathActive && pathNodeIds.has(node.id)) {
+        ctx.globalAlpha = 0.4
+        ctx.beginPath()
+        ctx.arc(x, y, node.size + 6 / globalScale, 0, 2 * Math.PI)
+        ctx.fillStyle = 'rgba(16,185,129,0.5)'
+        ctx.fill()
+      }
 
       if (node.isRoot || activeSelectionId === node.id) {
         ctx.globalAlpha = dim ? 0.12 : 0.35
@@ -522,7 +591,13 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       ctx.fillStyle = node.color
       ctx.fill()
       ctx.lineWidth = (node.isRoot ? 2.5 : activeSelectionId === node.id ? 2 : 1.25) / globalScale
-      ctx.strokeStyle = node.isRoot ? '#ff6b35' : activeSelectionId === node.id ? '#ffd700' : 'rgba(9,14,20,0.9)'
+      ctx.strokeStyle = node.isRoot
+        ? '#ff6b35'
+        : activeSelectionId === node.id
+          ? '#ffd700'
+          : pathActive && pathNodeIds.has(node.id)
+            ? '#10b981'
+            : 'rgba(9,14,20,0.9)'
       ctx.stroke()
 
       if (markedIds.has(node.id)) {
@@ -569,7 +644,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
       }
       ctx.globalAlpha = 1
     },
-    [activeId, neighborIds, activeSelectionId, priorityLabelIds, zoomLabelIds, markedIds],
+    [activeId, highlightIds, activeSelectionId, priorityLabelIds, zoomLabelIds, markedIds, pathActive, pathNodeIds],
   )
 
   const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
@@ -587,6 +662,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
   const linkColor = useCallback(
     (link: GraphLink) => {
       const base = EDGE_COLORS[link.type] ?? EDGE_COLORS.reference
+      const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
+      // While a connection is on screen the path is the only thing that matters.
+      if (pathActive) {
+        if (pathLinkKeys.has(key)) return base
+        const rootId = rootNode?.id
+        const touchesRoot =
+          !!rootId && (linkEndId(link.source) === rootId || linkEndId(link.target) === rootId)
+        return withAlpha(base, touchesRoot ? 0.18 : 0.06)
+      }
       // Root's direct predecessors/successors stay fully lit as a lineage cue.
       const rootId = rootNode?.id
       const isLineageEdge =
@@ -602,18 +686,18 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({ paper, slot = 'primary' }) 
         }
         return withAlpha(base, 0.35)
       }
-      const key = `${linkEndId(link.source)}->${linkEndId(link.target)}`
       return linkKeys.has(key) ? base : withAlpha(base, 0.06)
     },
-    [activeId, linkKeys, colorMode, clusterById, rootNode],
+    [activeId, linkKeys, colorMode, clusterById, rootNode, pathActive, pathLinkKeys],
   )
 
   const nodeColor = useCallback(
     (node: GraphNode) => {
+      if (pathActive) return pathNodeIds.has(node.id) ? node.color : '#2a2f3a'
       if (!activeId) return node.color
-      return neighborIds.has(node.id) ? node.color : '#2a2f3a'
+      return highlightIds.has(node.id) ? node.color : '#2a2f3a'
     },
-    [activeId, neighborIds],
+    [activeId, highlightIds, pathActive, pathNodeIds],
   )
 
   const commonProps = {

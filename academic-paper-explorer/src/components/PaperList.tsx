@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare, Star } from 'lucide-react'
+import { FileText, ExternalLink, Calendar, Quote, Users, Loader2, AlertCircle, GitCompare, Star, Link2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { useReadingStore } from '../store/useReadingStore'
 import { useLibraryStore } from '../store/useLibraryStore'
@@ -20,9 +20,18 @@ const PaperList: React.FC = () => {
     selectRootPaper,
     comparePaper,
     setComparePaper,
+    connectionFrom,
+    connectionTo,
+    connectPaper,
     filters,
     submittedQuery
   } = useUiStore()
+
+  // A paper is "in the pair" whichever slot it occupies, so the row button can
+  // double as a pressed-state indicator.
+  const endpointKeys = new Set(
+    [resolvePaperKey(connectionFrom), resolvePaperKey(connectionTo)].filter(Boolean) as string[],
+  )
   const readingEntries = useReadingStore((s) => s.entries)
   const setReadingStatus = useReadingStore((s) => s.setStatus)
   const library = useLibraryStore((s) => s.library)
@@ -267,6 +276,21 @@ const PaperList: React.FC = () => {
                   title="加入对比"
                 >
                   <GitCompare className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="关联"
+                  aria-pressed={endpointKeys.has(paperKey(paper))}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    connectPaper(paper, { run: true })
+                  }}
+                  className={`ml-2 flex-shrink-0 rounded p-1 hover:bg-gray-500 ${
+                    endpointKeys.has(paperKey(paper)) ? 'text-emerald-400' : 'text-gray-400'
+                  }`}
+                  title="加入关联分析（与当前论文或对比论文）"
+                >
+                  <Link2 className="w-4 h-4" />
                 </button>
                 <span className={`ml-2 px-2 py-1 text-xs text-white rounded ${getSourceBadgeColor(paper.source)}`}>
                   {paper.source.replace('_', ' ').toUpperCase()}

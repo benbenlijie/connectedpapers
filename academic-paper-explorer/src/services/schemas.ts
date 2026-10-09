@@ -55,3 +55,44 @@ export const lineageResponseSchema = z.object({
     followUps: z.array(lineagePaperSchema),
   }),
 })
+
+const connectionNodeSchema = z.object({ id: z.string() }).passthrough()
+
+export const connectionPathSchema = z.object({
+  kind: z.enum(['same_paper', 'direct', 'citation_path', 'coupling', 'co_citation', 'semantic_bridge']),
+  nodeIds: z.array(z.string()),
+  nodes: z.array(connectionNodeSchema),
+  edges: z.array(z.object({ from: z.string(), to: z.string(), type: z.string(), weight: z.number() }).passthrough()),
+  hops: z.array(
+    z.object({ from: z.string(), to: z.string(), type: z.string(), forward: z.boolean(), text: z.string() }).passthrough(),
+  ),
+  hopCount: z.number(),
+  score: z.number(),
+  summary: z.string(),
+})
+
+export const connectionResponseSchema = z.object({
+  data: z.object({
+    from: connectionNodeSchema,
+    to: connectionNodeSchema,
+    found: z.boolean(),
+    best: connectionPathSchema.nullable(),
+    alternatives: z.array(connectionPathSchema),
+    signals: z.object({
+      sharedReferences: z.array(connectionNodeSchema),
+      sharedCiters: z.array(connectionNodeSchema),
+      semanticSimilarity: z.number().nullable(),
+      sharedFields: z.array(z.string()),
+      sharedAuthors: z.array(z.string()),
+    }),
+    stats: z.object({
+      expanded: z.number(),
+      nodes: z.number(),
+      edges: z.number(),
+      elapsedMs: z.number(),
+      source: z.enum(['local', 'live']),
+      truncated: z.boolean(),
+      upstreamUnavailable: z.boolean(),
+    }),
+  }),
+})

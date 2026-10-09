@@ -1,13 +1,48 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe, ArrowUpRight, ArrowDownLeft, X } from 'lucide-react'
+import { ExternalLink, Download, Calendar, Quote, Users, BookOpen, Award, TrendingUp, Globe, ArrowUpRight, ArrowDownLeft, X, Link2 } from 'lucide-react'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperDetails } from '../hooks/usePaperDetails'
 import { usePaperLineage } from '../hooks/usePaperLineage'
 import { resolvePaperKey } from '../lib/paperKey'
 import { useNotesStore } from '../store/useNotesStore'
 import { useLibraryStore } from '../store/useLibraryStore'
-import type { LineagePaper } from '../types/domain'
+import type { LineagePaper, Paper } from '../types/domain'
+import { paperStubFromId } from '../graph/urlState'
+
+/**
+ * `/api/details` returns a paper shape that is close to `Paper` but lacks
+ * `source` and normalises authors differently. Coerce it back so the pair state
+ * (and therefore the URL) keeps using one identity.
+ */
+function asPaper(p: {
+  id: string
+  title?: string
+  authors?: unknown
+  citation_count?: number
+  year?: number
+  publication_year?: number
+  venue?: string
+  url?: string
+  doi?: string
+  openalex_id?: string
+  semantic_scholar_id?: string
+}): Paper {
+  return {
+    id: p.id,
+    title: p.title || p.id,
+    authors: typeof p.authors === 'string' ? p.authors : '',
+    citation_count: p.citation_count ?? 0,
+    year: p.year,
+    publication_year: p.publication_year,
+    venue: p.venue,
+    url: p.url,
+    doi: p.doi,
+    openalex_id: p.openalex_id,
+    semantic_scholar_id: p.semantic_scholar_id,
+    source: 'semantic_scholar',
+  }
+}
 
 const LineageList: React.FC<{
   label: string
@@ -52,7 +87,15 @@ const LineageList: React.FC<{
 }
 
 const DetailsPanel: React.FC = () => {
-  const { selectedNodeId, selectedPaper, compareSelectedNodeId, setSelectedNodeId } = useUiStore()
+  const {
+    selectedNodeId,
+    selectedPaper,
+    compareSelectedNodeId,
+    setSelectedNodeId,
+    connectionFrom,
+    connectionTo,
+    connectPair,
+  } = useUiStore()
   const notes = useNotesStore((s) => s.notes)
   const setNote = useNotesStore((s) => s.setNote)
   const library = useLibraryStore((s) => s.library)
@@ -84,6 +127,39 @@ const DetailsPanel: React.FC = () => {
   const { data: paperDetails, isLoading, error } = usePaperDetails(paperId)
   const { data: lineage } = usePaperLineage(paperId)
 
+  // "Relate this to the paper I am exploring": the anchor is an endpoint the
+  // user already picked, else the root paper. Driven by `paperId` rather than
+  // the loaded `paper`, so the entry works before (and even without) the
+  // details request — the pair only needs ids, and the network cache supplies
+  // the title.
+  const onScreenKey = paperId
+  const anchor = connectionFrom ?? connectionTo ?? selectedPaper
+  const anchorKey = resolvePaperKey(anchor)
+  const relateTarget = anchor && anchorKey && onScreenKey && anchorKey !== onScreenKey ? anchor : null
+  const detailsPaper = paperDetails?.paper
+  const relatedPaper: Paper | null = relateTarget
+    ? detailsPaper && resolvePaperKey(detailsPaper) === onScreenKey
+      ? asPaper(detailsPaper)
+      : paperStubFromId(onScreenKey!)
+    : null
+
+  const headerBar = (
+    <div className="border-b border-gray-700 bg-gray-800 p-4">
+      <h2 className="text-lg font-semibold text-white">论文详情</h2>
+      {relateTarget && relatedPaper && (
+        <button
+          type="button"
+          onClick={() => connectPair(relateTarget, relatedPaper, { run: true })}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-emerald-600 px-2 py-1.5 text-xs text-emerald-300 hover:bg-emerald-600/20"
+          title="分析这篇论文与根论文之间的关联路径"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          与当前论文分析关联
+        </button>
+      )}
+    </div>
+  )
+
   if (!selectedPaper && !selectedNodeId && !compareSelectedNodeId) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -102,10 +178,13 @@ const DetailsPanel: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-400">加载详情中...</p>
+      <div className="flex h-full flex-col overflow-y-auto">
+        {headerBar}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-400">加载详情中...</p>
+          </div>
         </div>
       </div>
     )
@@ -113,10 +192,13 @@ const DetailsPanel: React.FC = () => {
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center p-6">
-          <div className="text-red-500 mb-4">加载失败</div>
-          <p className="text-gray-500 text-sm">{error.message}</p>
+      <div className="flex h-full flex-col overflow-y-auto">
+        {headerBar}
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center p-6">
+            <div className="text-red-500 mb-4">加载失败</div>
+            <p className="text-gray-500 text-sm">{error.message}</p>
+          </div>
         </div>
       </div>
     )
@@ -137,9 +219,7 @@ const DetailsPanel: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto">
       {/* 标题栏 */}
-      <div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 z-10">
-        <h2 className="text-lg font-semibold text-white">论文详情</h2>
-      </div>
+      <div className="sticky top-0 z-10">{headerBar}</div>
 
       <div className="p-4 space-y-6">
         {/* 基本信息 */}

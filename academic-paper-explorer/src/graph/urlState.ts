@@ -18,6 +18,8 @@ export interface UrlState {
   selectedVenues: string[]
   expandedNodeIds: string[]
   compareExpandedNodeIds: string[]
+  connectionFromId: string | null
+  connectionToId: string | null
 }
 
 const COLOR_MODES: ColorMode[] = ['cluster', 'year', 'field']
@@ -45,6 +47,8 @@ export function defaultUrlState(): UrlState {
     selectedVenues: [],
     expandedNodeIds: [],
     compareExpandedNodeIds: [],
+    connectionFromId: null,
+    connectionToId: null,
   }
 }
 
@@ -84,6 +88,10 @@ export function serializeUrlState(state: UrlState): string {
   if (state.minCitations !== d.minCitations) params.set('cit', String(state.minCitations))
   for (const f of state.selectedFields) params.append('f', f)
   for (const v of state.selectedVenues) params.append('v', v)
+  // The two-paper relation pair is shareable on its own, so it is not gated on
+  // a root paper. Serialized last so the ordering stays deterministic.
+  if (state.connectionFromId) params.set('from', state.connectionFromId)
+  if (state.connectionToId) params.set('to', state.connectionToId)
   return params.toString()
 }
 
@@ -117,6 +125,8 @@ export function parseUrlState(search: string): UrlState {
     selectedVenues: params.getAll('v'),
     expandedNodeIds: params.getAll('e'),
     compareExpandedNodeIds: params.getAll('e2'),
+    connectionFromId: params.get('from') || null,
+    connectionToId: params.get('to') || null,
   }
 }
 

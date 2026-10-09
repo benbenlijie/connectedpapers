@@ -56,6 +56,67 @@ export type LineagePaper = {
 
 export type PaperLineage = { root_id: string; prior: LineagePaper[]; followUps: LineagePaper[] }
 
+/** How two papers turned out to be connected. */
+export type ConnectionKind =
+  | 'same_paper'
+  | 'direct'
+  | 'citation_path'
+  | 'coupling'
+  | 'co_citation'
+  | 'semantic_bridge'
+
+export type ConnectionHop = {
+  /** Stored relation direction (citing -> cited), not the walk direction. */
+  from: string
+  to: string
+  type: EdgeType
+  forward: boolean
+  /** Pre-rendered Chinese sentence such as "A 引用了 X". */
+  text: string
+}
+
+export type ConnectionPath = {
+  kind: ConnectionKind
+  /** Paper ids in walk order, starting at the from-paper. */
+  nodeIds: string[]
+  nodes: NetworkNode[]
+  edges: NetworkEdge[]
+  hops: ConnectionHop[]
+  hopCount: number
+  score: number
+  summary: string
+}
+
+export type ConnectionSignals = {
+  sharedReferences: NetworkNode[]
+  sharedCiters: NetworkNode[]
+  semanticSimilarity: number | null
+  sharedFields: string[]
+  sharedAuthors: string[]
+}
+
+export type ConnectionStats = {
+  expanded: number
+  nodes: number
+  edges: number
+  elapsedMs: number
+  source: 'local' | 'live'
+  truncated: boolean
+  /** The upstream API could not be reached, so this answer is cache-only. */
+  upstreamUnavailable: boolean
+}
+
+export type PaperConnection = {
+  from: NetworkNode
+  to: NetworkNode
+  found: boolean
+  best: ConnectionPath | null
+  alternatives: ConnectionPath[]
+  signals: ConnectionSignals
+  stats: ConnectionStats
+}
+
+
 export type PaperDetails = {
   paper: {
     id: string

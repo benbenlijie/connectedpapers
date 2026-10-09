@@ -14,19 +14,26 @@ vi.mock('../hooks/usePaperLineage', () => ({
   usePaperLineage: () => ({ data: lineageMock.value, isLoading: false, error: null }),
 }))
 
+const detailsMock = vi.hoisted(() => ({ value: { data: undefined, isLoading: false, error: null } as Record<string, unknown> }))
 vi.mock('../hooks/usePaperDetails', () => ({
-  usePaperDetails: () => ({ data: undefined, isLoading: false, error: null }),
+  usePaperDetails: () => detailsMock.value,
 }))
 
 beforeEach(() => {
   localStorage.clear()
   lineageMock.value = undefined
+  detailsMock.value = { data: undefined, isLoading: false, error: null }
   useNotesStore.setState({ notes: {} })
   useLibraryStore.setState({ library: { favorites: [], collections: [], savedSearches: [] } })
   useUiStore.setState({
     selectedPaper: { id: 'p1', title: 'T', citation_count: 0, authors: '', source: 'semantic_scholar' },
     selectedNodeId: null,
     compareSelectedNodeId: null,
+    connectionFrom: null,
+    connectionTo: null,
+    connectionOpen: false,
+    connectionRequest: null,
+    connection: null,
   })
 })
 
@@ -168,5 +175,71 @@ describe('DetailsPanel notes', () => {
     expect(screen.getByText('后续工作（引用）')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Follow work'))
     expect(useUiStore.getState().selectedNodeId).toBe('c1')
+  })
+})
+
+describe('DetailsPanel association entry', () => {
+  it('offers to relate the paper on screen to the root paper', () => {
+    useUiStore.setState({
+      selectedPaper: { id: 'p1', title: '被探索的论文', citation_count: 0, authors: '', source: 'semantic_scholar' },
+      selectedNodeId: 'p2',
+    })
+    renderPanel()
+
+    const button = screen.getByRole('button', { name: /与当前论文分析关联/ })
+    fireEvent.click(button)
+
+    const s = useUiStore.getState()
+    expect(s.connectionFrom?.id).toBe('p1')
+    expect(s.connectionTo?.id).toBe('p2')
+    expect(s.connectionRequest).toEqual({ fromId: 'p1', toId: 'p2' })
+  })
+
+  it('hides the entry while the root paper itself is on screen', () => {
+    renderPanel()
+    expect(screen.queryByRole('button', { name: /与当前论文分析关联/ })).not.toBeInTheDocument()
+  })
+
+  it('stays available while the details request is still in flight', () => {
+    detailsMock.value = { data: undefined, isLoading: true, error: null }
+    useUiStore.setState({ selectedNodeId: 'p2' })
+    renderPanel()
+    expect(screen.getByText('加载详情中...')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /与当前论文分析关联/ })).toBeInTheDocument()
+  })
+
+  it('stays available when the details request fails', () => {
+    detailsMock.value = { data: undefined, isLoading: false, error: new Error('上游限流') }
+    useUiStore.setState({ selectedNodeId: 'p2' })
+    renderPanel()
+    expect(screen.getByText('加载失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /与当前论文分析关联/ })).toBeInTheDocument()
+  })
+
+  it('uses the fetched title for the paper it pairs', () => {
+    detailsMock.value = {
+      data: { paper: { id: 'p2', title: '选中的论文', citation_count: 0, authors: '', source: 'semantic_scholar' } },
+      isLoading: false,
+      error: null,
+    }
+    useUiStore.setState({ selectedNodeId: 'p2' })
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /与当前论文分析关联/ }))
+    expect(useUiStore.getState().connectionTo?.title).toBe('选中的论文')
+  })
+
+  it('anchors on an already chosen endpoint rather than the root paper', () => {
+    useUiStore.setState({
+      selectedPaper: { id: 'p1', title: '被探索的论文', citation_count: 0, authors: '', source: 'semantic_scholar' },
+      connectionFrom: { id: 'p9', title: '手动起点', citation_count: 0, authors: '', source: 'semantic_scholar' },
+      selectedNodeId: 'p2',
+    })
+    renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: /与当前论文分析关联/ }))
+
+    const s = useUiStore.getState()
+    expect(s.connectionFrom?.id).toBe('p9')
+    expect(s.connectionTo?.id).toBe('p2')
   })
 })

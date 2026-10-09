@@ -23,6 +23,8 @@ describe('urlState', () => {
       selectedVenues: ['Nature'],
       comparePaperId: 'ABC',
       compareSelectedNodeId: 's2:b',
+      connectionFromId: 'DOI:10.1/from',
+      connectionToId: 's2:to',
     }
     const parsed = parseUrlState(serializeUrlState(state))
     expect(parsed).toEqual(state)
@@ -101,6 +103,64 @@ describe('urlState', () => {
 
   it('accepts a leading question mark', () => {
     expect(parseUrlState('?paper=Y').paperId).toBe('Y')
+  })
+
+  it('serializes the relation pair as from/to, last, without a root paper', () => {
+    const params = new URLSearchParams(
+      serializeUrlState({ ...defaultUrlState(), connectionFromId: 'A', connectionToId: 'B' }),
+    )
+    expect(params.get('from')).toBe('A')
+    expect(params.get('to')).toBe('B')
+    // The pair is meaningful on its own, so it must not be gated on ?paper=.
+    expect(params.has('paper')).toBe(false)
+    // Deterministic order keeps the string comparison in useUrlSync stable.
+    expect(serializeUrlState({ ...defaultUrlState(), connectionFromId: 'A', connectionToId: 'B' })).toBe(
+      'from=A&to=B',
+    )
+  })
+
+  it('omits relation params when unset and keeps a partial pair', () => {
+    const empty = new URLSearchParams(serializeUrlState(defaultUrlState()))
+    expect(empty.has('from')).toBe(false)
+    expect(empty.has('to')).toBe(false)
+
+    const partial = new URLSearchParams(
+      serializeUrlState({ ...defaultUrlState(), connectionFromId: 'A' }),
+    )
+    expect(partial.get('from')).toBe('A')
+    expect(partial.has('to')).toBe(false)
+  })
+
+  it('parses the relation pair', () => {
+    const parsed = parseUrlState('from=DOI:10.1/x&to=s2:y')
+    expect(parsed.connectionFromId).toBe('DOI:10.1/x')
+    expect(parsed.connectionToId).toBe('s2:y')
+  })
+
+  it('defaults relation params to null and drops empty values', () => {
+    const d = defaultUrlState()
+    expect(d.connectionFromId).toBeNull()
+    expect(d.connectionToId).toBeNull()
+    const parsed = parseUrlState('paper=X&from=&to=')
+    expect(parsed.connectionFromId).toBeNull()
+    expect(parsed.connectionToId).toBeNull()
+  })
+
+  it('round-trips from/to alongside the other params', () => {
+    const state = {
+      ...defaultUrlState(),
+      paperId: 'A',
+      depth: 2,
+      maxNodes: 100,
+      selectedNodeId: 'n1',
+      colorMode: 'field' as const,
+      yearRange: [2001, 2019] as [number, number],
+      selectedFields: ['Physics'],
+      connectionFromId: 'A',
+      connectionToId: 'B',
+    }
+    const parsed = parseUrlState(serializeUrlState(state))
+    expect(parsed).toEqual(state)
   })
 
   it('builds a minimal paper stub whose id round-trips through resolveClientId', () => {

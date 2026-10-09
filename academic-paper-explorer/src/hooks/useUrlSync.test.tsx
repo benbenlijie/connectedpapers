@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { useUrlSync } from './useUrlSync'
@@ -29,6 +29,8 @@ beforeEach(() => {
     expandedNodeIds: [], compareExpandedNodeIds: [],
     graphView: '2d', colorMode: 'cluster', sizeMode: 'citations', timelineYear: null,
     filters: { yearRange: [1990, new Date().getFullYear()], minCitations: 0, selectedFields: [], selectedVenues: [] },
+    connectionOpen: false, connectionFrom: null, connectionTo: null,
+    connectionRequest: null, connection: null,
   })
 })
 
@@ -153,5 +155,65 @@ describe('useUrlSync', () => {
     const search = screen.getByTestId('search').textContent ?? ''
     expect(search).toContain('e=n1')
     expect(search).toContain('e2=m1')
+  })
+
+  it('hydrates the connection pair from the URL', () => {
+    renderAt('/?from=A&to=B')
+    const s = useUiStore.getState()
+    expect(s.connectionFrom?.id).toBe('A')
+    expect(s.connectionTo?.id).toBe('B')
+  })
+
+  it('auto-runs the relation analysis when both ids are present', () => {
+    renderAt('/?from=A&to=B')
+    const s = useUiStore.getState()
+    expect(s.connectionRequest).toEqual({ fromId: 'A', toId: 'B' })
+    expect(s.connectionOpen).toBe(true)
+  })
+
+  it('auto-runs at most once for a non-canonically ordered link', () => {
+    const spy = vi.spyOn(useUiStore.getState(), 'requestConnection')
+    renderAt('/?to=B&from=A')
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith('A', 'B')
+    spy.mockRestore()
+  })
+
+  it('does not auto-run when only one id is present', () => {
+    renderAt('/?from=A')
+    const s = useUiStore.getState()
+    expect(s.connectionFrom?.id).toBe('A')
+    expect(s.connectionTo).toBeNull()
+    expect(s.connectionRequest).toBeNull()
+  })
+
+  it('does not auto-run when both ids are identical', () => {
+    renderAt('/?from=A&to=A')
+    expect(useUiStore.getState().connectionRequest).toBeNull()
+  })
+
+  it('does not re-run the analysis for a pair we wrote ourselves', () => {
+    const spy = vi.spyOn(useUiStore.getState(), 'requestConnection')
+    renderAt('/')
+    act(() => {
+      useUiStore.getState().connectPair(
+        { id: 'A', title: 't', citation_count: 0, authors: '', source: 'semantic_scholar' },
+        { id: 'B', title: 't', citation_count: 0, authors: '', source: 'semantic_scholar' },
+      )
+    })
+    expect(spy).not.toHaveBeenCalled()
+    const search = screen.getByTestId('search').textContent ?? ''
+    expect(search).toContain('from=A')
+    expect(search).toContain('to=B')
+    spy.mockRestore()
+  })
+
+  it('clears a stale pair when a navigation omits from/to', () => {
+    renderAt('/?from=A&to=B')
+    act(() => nav('/?paper=X'))
+    const s = useUiStore.getState()
+    expect(s.connectionFrom).toBeNull()
+    expect(s.connectionTo).toBeNull()
+    expect(screen.getByTestId('search').textContent ?? '').not.toContain('from=')
   })
 })

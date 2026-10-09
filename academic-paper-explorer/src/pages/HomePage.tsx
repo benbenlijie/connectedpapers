@@ -3,13 +3,22 @@ import SearchBar from '../components/SearchBar'
 import PaperList from '../components/PaperList'
 import NetworkGraph from '../components/NetworkGraph'
 import DetailsPanel from '../components/DetailsPanel'
+import ConnectionPanel from '../components/ConnectionPanel'
+import ConnectionCapsule from '../components/ConnectionCapsule'
 import FilterPanel from '../components/FilterPanel'
 import { useUiStore } from '../store/useUiStore'
 import { usePaperNetwork } from '../hooks/usePaperNetwork'
 import { useUrlSync } from '../hooks/useUrlSync'
 
 const HomePage: React.FC = () => {
-  const { selectedPaper, graphDepth, graphMaxNodes, comparePaper, setComparePaper } = useUiStore()
+  const {
+    selectedPaper,
+    graphDepth,
+    graphMaxNodes,
+    comparePaper,
+    setComparePaper,
+    connectPair,
+  } = useUiStore()
   useUrlSync()
   const { data: networkData } = usePaperNetwork(selectedPaper, graphDepth ?? undefined, graphMaxNodes ?? undefined)
 
@@ -27,6 +36,7 @@ const HomePage: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            <ConnectionCapsule />
             <div className="text-sm text-gray-400">
               类似Connected Papers的交互式学术探索工具
             </div>
@@ -67,6 +77,14 @@ const HomePage: React.FC = () => {
                   <span className="truncate">{comparePaper.title || '对比论文'}</span>
                   <button
                     type="button"
+                    onClick={() => connectPair(selectedPaper, comparePaper, { run: true })}
+                    className="flex-shrink-0 whitespace-nowrap rounded border border-emerald-600 px-1.5 py-0.5 text-emerald-300 hover:bg-emerald-600/20"
+                    title="分析这两篇论文之间的关联路径"
+                  >
+                    分析这两篇的关联
+                  </button>
+                  <button
+                    type="button"
                     aria-label="退出对比"
                     onClick={() => setComparePaper(null)}
                     className="flex-shrink-0 rounded px-1 text-gray-400 hover:bg-gray-600 hover:text-white"
@@ -97,6 +115,8 @@ const HomePage: React.FC = () => {
               </div>
             </div>
           )}
+
+          <ConnectionPanel />
         </div>
 
         {/* 右侧详情面板 */}

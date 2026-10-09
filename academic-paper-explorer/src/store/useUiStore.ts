@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { Paper, EdgeType } from '../types/domain'
+import type { Paper, EdgeType, PaperConnection } from '../types/domain'
+import { resolvePaperKey } from '../lib/paperKey'
 import type { ColorMode, SizeMode } from '../graph/encoding'
 
 interface UiState {
@@ -26,6 +27,24 @@ interface UiState {
   hiddenEdgeTypes: EdgeType[]
   comparePaper: Paper | null
   compareSelectedNodeId: string | null
+  // "How are these two papers connected?" — the endpoints, the pending query
+  // and the answer, kept here so the toolbar, context menu and graph highlight
+  // all read the same source of truth.
+  connectionOpen: boolean
+  connectionFrom: Paper | null
+  connectionTo: Paper | null
+  connectionRequest: { fromId: string; toId: string } | null
+  connection: PaperConnection | null
+  setConnectionOpen: (open: boolean) => void
+  setConnectionFrom: (p: Paper | null) => void
+  setConnectionTo: (p: Paper | null) => void
+  requestConnection: (fromId: string, toId: string) => void
+  setConnection: (c: PaperConnection | null) => void
+  clearConnection: () => void
+  /** 列表行 / 详情面板的单篇入口：填进空槽位，两槽都满则替换终点。 */
+  connectPaper: (paper: Paper, opts?: { run?: boolean }) => void
+  /** 明确指定一对论文并打开面板（对比分屏的入口）。 */
+  connectPair: (from: Paper | null, to: Paper | null, opts?: { run?: boolean }) => void
   setSelectedPaper: (p: Paper | null) => void
   selectRootPaper: (p: Paper) => void
   setComparePaper: (p: Paper | null) => void
@@ -56,7 +75,18 @@ const defaultFilters = {
   selectedVenues: [] as string[],
 }
 
-export const useUiStore = create<UiState>((set) => ({
+/**
+ * Start the search for a complete pair. A half-filled pair only opens the
+ * panel: running one paper against nothing would burn an upstream crawl.
+ */
+function runConnectionFor(from: Paper | null, to: Paper | null) {
+  const fromId = resolvePaperKey(from)
+  const toId = resolvePaperKey(to)
+  if (!fromId || !toId || fromId === toId) return
+  useUiStore.setState({ connectionRequest: { fromId, toId }, connection: null })
+}
+
+export const useUiStore = create<UiState>((set, get) => ({
   selectedPaper: null,
   selectedNodeId: null,
   highlightedNodes: [],
@@ -75,6 +105,55 @@ export const useUiStore = create<UiState>((set) => ({
   hiddenEdgeTypes: [],
   comparePaper: null,
   compareSelectedNodeId: null,
+  connectionOpen: false,
+  connectionFrom: null,
+  connectionTo: null,
+  connectionRequest: null,
+  connection: null,
+  setConnectionOpen: (open) => set({ connectionOpen: open }),
+  setConnectionFrom: (p) => set({ connectionFrom: p }),
+  setConnectionTo: (p) => set({ connectionTo: p }),
+  requestConnection: (fromId, toId) =>
+    set({ connectionOpen: true, connectionRequest: { fromId, toId }, connection: null }),
+  setConnection: (c) => set({ connection: c }),
+  clearConnection: () => set({ connectionRequest: null, connection: null }),
+  connectPaper: (paper, opts) => {
+    const key = resolvePaperKey(paper)
+    if (!key) return
+    const { connectionFrom, connectionTo, selectedPaper } = get()
+    const fromKey = resolvePaperKey(connectionFrom)
+    const toKey = resolvePaperKey(connectionTo)
+
+    let nextFrom = connectionFrom
+    let nextTo = connectionTo
+
+    if (fromKey === key || toKey === key) {
+      // Pressing the slot button again takes the paper back out, matching the
+      // 收藏 / 对比 buttons sitting next to it.
+      if (fromKey === key) nextFrom = null
+      if (toKey === key) nextTo = null
+    } else {
+      // The paper being explored anchors the pair, so adding a neighbour never
+      // silently swaps out the paper the user is actually reading.
+      const anchor = connectionFrom ?? selectedPaper
+      const anchorKey = resolvePaperKey(anchor)
+      if (anchor && anchorKey && anchorKey !== key) {
+        nextFrom = anchor
+        nextTo = paper
+      } else if (!nextFrom) {
+        nextFrom = paper
+      } else {
+        nextTo = paper
+      }
+    }
+
+    set({ connectionOpen: true, connectionFrom: nextFrom, connectionTo: nextTo })
+    if (opts?.run) runConnectionFor(nextFrom, nextTo)
+  },
+  connectPair: (from, to, opts) => {
+    set({ connectionOpen: true, connectionFrom: from, connectionTo: to })
+    if (opts?.run) runConnectionFor(from, to)
+  },
   setSelectedPaper: (p) => set({ selectedPaper: p }),
   selectRootPaper: (p) => set({ selectedPaper: p, selectedNodeId: null, graphDepth: null, graphMaxNodes: null }),
   setComparePaper: (p) => set({ comparePaper: p, compareSelectedNodeId: null }),

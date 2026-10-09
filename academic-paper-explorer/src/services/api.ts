@@ -1,7 +1,8 @@
 import {
   searchResponseSchema, networkDataSchema, jobStatusSchema, detailsResponseSchema, lineageResponseSchema,
+  connectionResponseSchema,
 } from './schemas'
-import type { NetworkData, Paper, PaperDetails, PaperLineage } from '../types/domain'
+import type { NetworkData, Paper, PaperConnection, PaperDetails, PaperLineage } from '../types/domain'
 import { API_BASE } from '../lib/apiBase'
 
 export class ApiError extends Error {
@@ -65,6 +66,16 @@ export const api = {
   async lineage(paperId: string): Promise<PaperLineage> {
     const parsed = lineageResponseSchema.parse(await request('/lineage', { paper_id: paperId })) as { data: PaperLineage }
     return parsed.data
+  },
+  /**
+   * How two papers are connected. Longest request in the app: the server may
+   * crawl outward from both endpoints, so there is no client-side timeout.
+   */
+  async connect(fromId: string, toId: string): Promise<PaperConnection> {
+    const parsed = connectionResponseSchema.parse(
+      await request('/connect', { from_id: fromId, to_id: toId }),
+    )
+    return parsed.data as unknown as PaperConnection
   },
   networkWithPolling,
 }

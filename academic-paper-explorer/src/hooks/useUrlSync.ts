@@ -9,6 +9,10 @@ export function useUrlSync() {
   const search = searchParams.toString()
   const lastWritten = useRef<string | null>(null)
   const hydrated = useRef(false)
+  // Guards the auto-run below: a hydration can legitimately happen twice for a
+  // non-canonically ordered query string (our write canonicalises it), and the
+  // same pair must never kick off a second crawl.
+  const lastAutoRun = useRef<string | null>(null)
 
   // URL -> store. Skipped when the current search is one we just wrote, so we
   // never re-hydrate (and loop) on our own navigation.
@@ -23,6 +27,21 @@ export function useUrlSync() {
     store.setCompareSelectedNodeId(s.compareSelectedNodeId)
     store.setExpandedNodeIds(s.expandedNodeIds)
     store.setCompareExpandedNodeIds(s.compareExpandedNodeIds)
+    const fromId = s.connectionFromId
+    const toId = s.connectionToId
+    store.setConnectionFrom(fromId ? paperStubFromId(fromId) : null)
+    store.setConnectionTo(toId ? paperStubFromId(toId) : null)
+    // Only a genuine URL hydration reaches this point (our own writes are
+    // filtered out above via `lastWritten`), so opening a shared ?from/?to link
+    // re-runs the relation analysis. Incomplete or identical pairs are skipped:
+    // they cannot produce a relation and would waste an upstream crawl.
+    if (fromId && toId && fromId !== toId) {
+      const pairKey = `${fromId}\u0000${toId}`
+      if (lastAutoRun.current !== pairKey) {
+        lastAutoRun.current = pairKey
+        store.requestConnection(fromId, toId)
+      }
+    }
     store.setGraphView(s.graphView)
     store.setColorMode(s.colorMode)
     store.setSizeMode(s.sizeMode)
@@ -60,6 +79,8 @@ export function useUrlSync() {
         selectedVenues: s.filters.selectedVenues,
         expandedNodeIds: s.expandedNodeIds,
         compareExpandedNodeIds: s.compareExpandedNodeIds,
+        connectionFromId: resolveClientId(s.connectionFrom),
+        connectionToId: resolveClientId(s.connectionTo),
       }
       const serialized = serializeUrlState(next)
       if (serialized === lastWritten.current) return
