@@ -194,4 +194,69 @@ describe('ReaderPage', () => {
     expect(node.classList.contains('cn-translation--collapsed')).toBe(false)
     expect(node.textContent).toBe('你好，世界')
   })
+
+  /** Route every request the reader makes: arXiv HTML, the server fallback and
+   *  the provider status poll. */
+  function mockSources(opts: {
+    html?: () => unknown
+    server?: () => unknown
+    onRequest?: (url: string) => void
+  }) {
+    globalThis.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      opts.onRequest?.(u)
+      if (u.includes('/api/llm/status')) return { ok: true, json: async () => ({ data: { providers: [] } }) }
+      if (u.includes('/api/reader/')) {
+        return opts.server ? opts.server() : { ok: false, status: 404 }
+      }
+      if (u.includes('arxiv.org/html/')) {
+        return opts.html ? opts.html() : { ok: false, status: 404 }
+      }
+      throw new TypeError(`unexpected request ${u}`)
+    }) as unknown as typeof fetch
+  }
+
+  const serverContent = {
+    ok: true,
+    json: async () => ({
+      data: {
+        arxivId: '2401.00001',
+        title: 'Server Paper',
+        source: 'pdf',
+        sections: [{ idx: 0, heading: 'Introduction', text: 'Text pulled from the PDF.' }],
+      },
+    }),
+  }
+
+  it('falls back to the server text when arXiv has no HTML build', async () => {
+    mockSources({ server: () => serverContent })
+    renderReader()
+
+    const frame = await screen.findByTestId('reader-frame')
+    expect(frame.getAttribute('srcdoc')).toContain('Text pulled from the PDF.')
+    expect(screen.getByRole('button', { name: 'Introduction' })).toBeInTheDocument()
+    expect(screen.getByText(/PDF 自动抽取/)).toBeInTheDocument()
+  })
+
+  it('retries through the server with refresh=1', async () => {
+    const calls: string[] = []
+    mockSources({ server: () => serverContent, onRequest: (u) => calls.push(u) })
+    renderReader()
+    await screen.findByTestId('reader-frame')
+    expect(calls.some((u) => u.includes('/api/reader/2401.00001'))).toBe(true)
+    expect(calls.some((u) => u.includes('refresh=1'))).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '重新获取' }))
+    await waitFor(() => expect(calls.some((u) => u.includes('refresh=1'))).toBe(true))
+  })
+
+  it('opens the PDF in an iframe when no text source works', async () => {
+    mockSources({})
+    renderReader()
+
+    expect(await screen.findByText(/无法加载/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '以 PDF 形式阅读' }))
+    const frame = await screen.findByTestId('pdf-frame')
+    expect(frame.getAttribute('src')).toBe('https://arxiv.org/pdf/2401.00001')
+  })
 })

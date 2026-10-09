@@ -1,6 +1,16 @@
 import { test, expect, beforeEach } from 'bun:test'
 import { openDb } from './db'
-import { extractSections, loadPaperContent, getCachedContent, saveContent } from './paper-content'
+import {
+  ar5ivUrl,
+  extractSections,
+  getCachedContent,
+  htmlUrl,
+  isArxivId,
+  loadPaperContent,
+  pdfUrl,
+  saveContent,
+} from './paper-content'
+import { pdfFixtureResponse } from './test-fixtures'
 
 let db: ReturnType<typeof openDb>
 beforeEach(() => { db = openDb(':memory:') })
@@ -68,4 +78,75 @@ test('loadPaperContent falls back to the abstract when HTML fails', async () => 
   }))
   expect(out.source).toBe('abstract')
   expect(out.sections[0].text).toContain('graphs')
+})
+
+test('loadPaperContent falls back to ar5iv when arXiv answers without sections', async () => {
+  // arXiv serves 200 for some papers with no LaTeXML body; the section count is
+  // what tells us we got a real paper, not the status code.
+  const seen: string[] = []
+  const fetchImpl = (async (url: string) => {
+    seen.push(String(url))
+    if (String(url).includes('ar5iv')) return new Response(HTML, { status: 200 })
+    return new Response('<html><body><p>no html build</p></body></html>', { status: 200 })
+  }) as unknown as typeof fetch
+
+  const out = await loadPaperContent('2401.00010', fetchImpl, db, async () => ({ title: 'x', abstract: 'y' }))
+  expect(out.source).toBe('ar5iv')
+  expect(out.sections).toHaveLength(2)
+  expect(seen[0]).toContain('https://arxiv.org/html/2401.00010')
+  expect(seen[1]).toContain('https://ar5iv.labs.arxiv.org/html/2401.00010')
+  expect(getCachedContent('2401.00010', db)?.source).toBe('ar5iv')
+})
+
+test('loadPaperContent falls back to PDF text when no HTML source converts', async () => {
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes('/pdf/')) return pdfFixtureResponse()
+    return new Response('nope', { status: 404 })
+  }) as unknown as typeof fetch
+
+  const out = await loadPaperContent('2401.00011', fetchImpl, db, async () => ({
+    title: 'Title From The arXiv API',
+    abstract: 'A.',
+  }))
+  expect(out.source).toBe('pdf')
+  expect(out.title).toBe('Title From The arXiv API')
+  expect(out.sections.map((s) => s.heading)).toContain('Introduction')
+  expect(out.sections.find((s) => s.heading === 'Introduction')?.text).toContain('Graph neural networks')
+  expect(getCachedContent('2401.00011', db)?.source).toBe('pdf')
+})
+
+test('loadPaperContent keeps the PDF title guess when the abstract source is down', async () => {
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes('/pdf/')) return pdfFixtureResponse()
+    return new Response('nope', { status: 404 })
+  }) as unknown as typeof fetch
+
+  const out = await loadPaperContent('2401.00012', fetchImpl, db, async () => {
+    throw new Error('offline')
+  })
+  expect(out.source).toBe('pdf')
+  expect(out.title).toBe('Mini Paper Title')
+})
+
+test('loadPaperContent can bypass the cache on refresh', async () => {
+  saveContent({ arxivId: '2401.00013', title: 'stale', sections: [{ idx: 0, heading: 'A', text: 'b' }], source: 'abstract' }, 168, db)
+  const fetchImpl = (async () => new Response(HTML, { status: 200 })) as unknown as typeof fetch
+
+  const cached = await loadPaperContent('2401.00013', fetchImpl, db)
+  expect(cached.title).toBe('stale')
+
+  const fresh = await loadPaperContent('2401.00013', fetchImpl, db, undefined, 168, true)
+  expect(fresh.source).toBe('html')
+  expect(fresh.title).toBe('Attention Is All You Need')
+})
+
+test('paper source urls are version-less and validated', () => {
+  expect(htmlUrl('2401.00001v2')).toBe('https://arxiv.org/html/2401.00001')
+  expect(ar5ivUrl('2401.00001v2')).toBe('https://ar5iv.labs.arxiv.org/html/2401.00001')
+  expect(pdfUrl('2401.00001v3')).toBe('https://arxiv.org/pdf/2401.00001')
+  expect(isArxivId('2401.00001')).toBe(true)
+  expect(isArxivId('2401.00001v2')).toBe(true)
+  expect(isArxivId('math.GT/0309136')).toBe(true)
+  expect(isArxivId('../../etc/passwd')).toBe(false)
+  expect(isArxivId('2401.00001/../x')).toBe(false)
 })

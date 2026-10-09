@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { arxivHtmlUrl, arxivAbsUrl, arxivPdfUrl, sanitizeArticleHtml, extractOutline } from './article'
+import {
+  ar5ivHtmlUrl,
+  arxivAbsUrl,
+  arxivHtmlUrl,
+  arxivPdfUrl,
+  classifyReaderError,
+  extractOutline,
+  HttpError,
+  readerErrorMessage,
+  sanitizeArticleHtml,
+  sourceNotice,
+  splitParagraphs,
+  stripVersion,
+  synthesizeArticleHtml,
+  type ReaderContent,
+} from './article'
 
 describe('arxiv url builders', () => {
   it('builds html/abs/pdf urls', () => {
@@ -77,6 +92,92 @@ describe('extractOutline', () => {
     expect(extractOutline(html)).toEqual([
       { id: 'S1', text: 'Introduction', level: 2 },
       { id: 'S2.SS1', text: 'Details', level: 3 },
+    ])
+  })
+})
+
+describe('reader source fallbacks', () => {
+  it('strips the version so a version-less HTML build is not missed', () => {
+    expect(arxivHtmlUrl('2401.00001v2')).toBe('https://arxiv.org/html/2401.00001')
+    expect(ar5ivHtmlUrl('2401.00001v2')).toBe('https://ar5iv.labs.arxiv.org/html/2401.00001')
+    expect(stripVersion('2401.00001v10')).toBe('2401.00001')
+    expect(stripVersion('2401.00001')).toBe('2401.00001')
+  })
+
+  it('describes each fallback source', () => {
+    expect(sourceNotice('html')).toBeNull()
+    expect(sourceNotice(null)).toBeNull()
+    expect(sourceNotice('ar5iv')).toMatch(/ar5iv/)
+    expect(sourceNotice('pdf')).toMatch(/PDF/)
+    expect(sourceNotice('abstract')).toMatch(/摘要/)
+  })
+
+  it('classifies load failures by cause', () => {
+    const timeout = Object.assign(new Error('t'), { name: 'TimeoutError' })
+    const http = new HttpError(404)
+    expect(classifyReaderError(http, new HttpError(500))).toBe('no-html')
+    expect(classifyReaderError(timeout, http)).toBe('timeout')
+    expect(classifyReaderError(new TypeError('Failed to fetch'), http)).toBe('network')
+    expect(classifyReaderError(http, new TypeError('Failed to fetch'))).toBe('network')
+    expect(readerErrorMessage('timeout')).toMatch(/超时/)
+    expect(readerErrorMessage('network')).toMatch(/网络/)
+    expect(readerErrorMessage('no-html')).toMatch(/HTML/)
+  })
+})
+
+describe('synthesizeArticleHtml', () => {
+  const content: ReaderContent = {
+    arxivId: '2401.00001',
+    title: 'A <Paper> & Title',
+    source: 'pdf',
+    sections: [
+      { idx: 0, heading: 'Introduction', text: 'First sentence. Second sentence.' },
+      { idx: 1, heading: '', text: 'No heading here.' },
+    ],
+  }
+
+  it('renders sections the reader machinery can use', () => {
+    const html = synthesizeArticleHtml(content)
+    expect(html).toContain('<section id="S0">')
+    expect(html).toContain('<h2>Introduction</h2>')
+    expect(html).toContain('<p>First sentence. Second sentence.</p>')
+    expect(html).toContain('<section id="S1">')
+    // Title text is escaped, never injected as markup.
+    expect(html).toContain('A &lt;Paper&gt; &amp; Title')
+    expect(html).not.toContain('<Paper>')
+  })
+
+  it('produces an outline when sanitized', () => {
+    const outline = extractOutline(sanitizeArticleHtml(synthesizeArticleHtml(content)))
+    expect(outline).toEqual([{ id: 'S0', text: 'Introduction', level: 2 }])
+  })
+
+  it('splits long PDF text into translatable paragraphs', () => {
+    const long = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} about graphs.`).join(' ')
+    const html = synthesizeArticleHtml(
+      { arxivId: 'x', title: 'T', source: 'pdf', sections: [{ idx: 0, heading: '', text: long }] },
+      200,
+    )
+    const paragraphs = html.match(/<p>/g) ?? []
+    expect(paragraphs.length).toBeGreaterThan(1)
+    for (const p of html.split('<p>').slice(1)) {
+      expect(p.indexOf('</p>')).toBeGreaterThan(0)
+      expect(p.slice(0, p.indexOf('</p>')).length).toBeLessThanOrEqual(200)
+    }
+  })
+})
+
+describe('splitParagraphs', () => {
+  it('keeps short text in one paragraph and drops blank input', () => {
+    expect(splitParagraphs('One sentence.')).toEqual(['One sentence.'])
+    expect(splitParagraphs('   ')).toEqual([])
+  })
+
+  it('cuts at sentence boundaries', () => {
+    expect(splitParagraphs('Alpha beta. Gamma delta. Epsilon.', 20)).toEqual([
+      'Alpha beta.',
+      'Gamma delta.',
+      'Epsilon.',
     ])
   })
 })

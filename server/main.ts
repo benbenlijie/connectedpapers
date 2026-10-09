@@ -11,6 +11,7 @@ import { aiSessionRoute, aiChatRoute, aiHistoryRoute, aiStreamRoute, aiAbortRout
 import { neighborsRoute } from './routes/neighbors'
 import { lineageRoute } from './routes/lineage'
 import { paperSearchRoute, paperSectionRoute } from './routes/paper'
+import { readerRoute } from './routes/reader'
 import { INTERNAL_TOKEN } from './internal-token'
 import { db } from './db'
 import { createOpencodeClient, OpencodeManager } from './opencode'
@@ -164,6 +165,9 @@ server = Bun.serve({
       if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
       if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
       if (p.startsWith('/api/neighbors/') && req.method === 'GET') return await neighborsRoute(p.split('/').pop()!)
+      if (p.startsWith('/api/reader/') && req.method === 'GET') {
+        return await readerRoute(req, decodeURIComponent(p.slice('/api/reader/'.length)), db)
+      }
       if (p.startsWith('/api/paper/session/') && p.endsWith('/search') && req.method === 'GET') {
         return await paperSearchRoute(req, db, INTERNAL_TOKEN)
       }

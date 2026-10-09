@@ -28,10 +28,16 @@ PORT=8787
 ## 2. 构建前端
 
 ```bash
+bun install        # 后端运行时依赖（unpdf：PDF 兜底解析、纯 JS 无需 poppler）
 bun run build:web
 ```
 
 产物输出到 `academic-paper-explorer/dist/`，由后端进程托管。
+
+> 阅读器遇到没有 arXiv HTML 版的论文时，会按「arXiv HTML → ar5iv → PDF 文本 → 摘要」
+> 逐级回退（后端 `GET /api/reader/:arxivId`）。PDF 抽取依赖 `unpdf`；漏装时该级自动跳过，
+> 只显示摘要，服务仍能正常启动。`scripts/deploy.sh` 会在同步后自动在远端执行
+> `bun install --frozen-lockfile --production`（可用 `SKIP_INSTALL=1` 跳过）。
 
 ## 3. 启动服务
 
@@ -243,12 +249,13 @@ location /papers/ {
 bun run deploy          # = bash scripts/deploy.sh
 ```
 
-脚本会：按 `VITE_BASE=/papers/` 构建前端 → `rsync` 同步（排除 .git/node_modules/data/server/.env）→ `systemctl restart connectedpapers` → 健康检查。
+脚本会：按 `VITE_BASE=/papers/` 构建前端 → `rsync` 同步（排除 .git/node_modules/data/server/.env）→ 远端 `bun install --frozen-lockfile --production` → `systemctl restart connectedpapers` → 健康检查。
 
 常用变体：
 
 ```bash
 SKIP_WEB=1 bun run deploy      # 只改了后端/配置，跳过前端构建
+SKIP_INSTALL=1 bun run deploy  # 依赖没变，跳过远端 bun install
 SKIP_RESTART=1 bun run deploy  # 只同步，不重启
 REMOTE=other-host DIR=/srv/app VITE_BASE=/base/ bun run deploy
 ```

@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.2"
+  },
+  "dependencies": {
+    "unpdf": "1.8.1"
   }
 }

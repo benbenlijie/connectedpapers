@@ -287,8 +287,30 @@ handles both. The sanitized document is rendered in an
 `<iframe sandbox="allow-same-origin">` (no `allow-scripts`), which blocks script
 execution while letting the parent read the DOM for outline jumps today and
 translation injection later. `normalizeS2Paper` now exposes `arxiv_id`
-(`externalIds.ArXiv`); the details panel links to the reader when present, and
-the page falls back to arXiv abs/PDF links when no HTML build exists.
+(`externalIds.ArXiv`); the details panel links to the reader when present.
+
+The reader walks a source chain instead of dead-ending when a paper has no HTML
+build, and every stage lands in the same `<section>/<h2>/<p>` shape so outline,
+translation, highlights and AI selection work unchanged:
+
+1. **arXiv HTML** — fetched in the browser (best fidelity: figures, math,
+   LaTeXML structure) with a 20s deadline. arXiv builds HTML *per version*, so
+   every URL is version-less (`stripVersion`); `/html/{id}v2` 404s when only v1
+   was converted.
+2. **Server fallback** — `GET /api/reader/:arxivId` (`routes/reader.ts` →
+   `loadPaperContent`) tries ar5iv (which sends no CORS header, hence the
+   proxy), then the PDF text, then the abstract. `lib/article.ts` turns the
+   returned sections into a plain reader document (`synthesizeArticleHtml`),
+   splitting long PDF text at sentence boundaries so translation still sees
+   paragraph-sized blocks. A banner names the fallback source.
+3. **PDF in an iframe** — last resort, offered from the error panel.
+   `arxiv.org/pdf/...` is embeddable (no `X-Frame-Options`), while the abs page
+   is not (`SAMEORIGIN`).
+
+Failures are classified (`classifyReaderError`) into no-HTML / timeout / network
+so the message distinguishes "this paper has no HTML build" from a blocked or
+slow network, and the panel offers retry (with `?refresh=1`, bypassing the
+server cache).
 
 ### 12. Immersive paragraph translation
 
@@ -349,8 +371,12 @@ own text **on demand** instead of answering from the model's memory.
 - **Retrieval (`paper-content.ts` + `routes/paper.ts`)** — `paper-content.ts`
   fetches `arxiv.org/html/{id}`, extracts title/sections/paragraphs with Bun's
   `HTMLRewriter`, and caches them in `paper_content`/`paper_sections` with a
-  `PAPER_CONTENT_TTL_HOURS` TTL (abstract fallback via `arxiv.ts` when HTML is
-  missing). The tools call `GET /api/paper/session/:id/search?q=` (ranked
+  `PAPER_CONTENT_TTL_HOURS` TTL. When that fails it walks `ar5iv` → PDF text
+  (`pdf-text.ts`, `unpdf` + heading heuristics, source `pdf`) → the abstract
+  (`arxiv.ts`), recording which source won in `paper_content.source`, so search
+  and AI also work on papers that have no HTML build. `routes/reader.ts`
+  exposes the same chain to the browser. The tools call
+  `GET /api/paper/session/:id/search?q=` (ranked
   paragraphs via `rankSections`) and `GET /api/paper/session/:id/section/:idx`
   (full section); both require `X-Internal-Token` (`internal-token.ts`) supplied
   from opencode's env.

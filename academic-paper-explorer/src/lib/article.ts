@@ -1,8 +1,21 @@
 const ARXIV_BASE = 'https://arxiv.org'
 const ARXIV_HTML_DIR = `${ARXIV_BASE}/html/`
+const AR5IV_BASE = 'https://ar5iv.labs.arxiv.org'
+
+/** arXiv builds HTML per version, so `/html/2401.00001v2` 404s whenever only
+ *  another version was converted. Every reader URL is version-less. */
+export function stripVersion(id: string): string {
+  return id.replace(/v\d+$/, '')
+}
 
 export function arxivHtmlUrl(id: string): string {
-  return `${ARXIV_BASE}/html/${encodeURIComponent(id)}`
+  return `${ARXIV_BASE}/html/${encodeURIComponent(stripVersion(id))}`
+}
+
+/** ar5iv converts papers arXiv itself skipped. It sends no CORS header, so the
+ *  browser cannot fetch it — only the server proxy can. */
+export function ar5ivHtmlUrl(id: string): string {
+  return `${AR5IV_BASE}/html/${encodeURIComponent(stripVersion(id))}`
 }
 
 export function arxivAbsUrl(id: string): string {
@@ -87,4 +100,173 @@ export function extractOutline(html: string): OutlineItem[] {
     }
   })
   return out
+}
+
+/** Where the reader's text came from. Mirrors the server's `PaperSource`. */
+export type PaperSource = 'html' | 'ar5iv' | 'pdf' | 'abstract'
+
+export interface ReaderSection {
+  idx: number
+  heading: string
+  text: string
+}
+
+export interface ReaderContent {
+  arxivId: string
+  title: string
+  sections: ReaderSection[]
+  source: PaperSource
+}
+
+export function isPaperSource(v: unknown): v is PaperSource {
+  return v === 'html' || v === 'ar5iv' || v === 'pdf' || v === 'abstract'
+}
+
+/** Human-readable note for a fallback source, or null for arXiv's own HTML. */
+export function sourceNotice(source: PaperSource | null): string | null {
+  switch (source) {
+    case 'ar5iv':
+      return 'arXiv 未提供该论文的 HTML 版，当前显示 ar5iv 转换版，排版可能与原文略有差异。'
+    case 'pdf':
+      return '该论文没有可用的 HTML 版，当前文本由 PDF 自动抽取，公式、图表和版式可能缺失。'
+    case 'abstract':
+      return '该论文的全文无法获取，当前仅显示摘要。'
+    default:
+      return null
+  }
+}
+
+export type ReaderErrorKind = 'no-html' | 'timeout' | 'network'
+
+/** Message shown when every source failed, split by cause so "no HTML build"
+ *  is not confused with a blocked/slow network. */
+export function readerErrorMessage(kind: ReaderErrorKind): string {
+  switch (kind) {
+    case 'timeout':
+      return '网络请求超时，arXiv 或服务器响应过慢。'
+    case 'network':
+      return '网络受限，无法访问 arXiv 或本地服务。'
+    default:
+      return '该论文没有可用的 HTML 版，服务端也未能抽取到全文。'
+  }
+}
+
+/** Classify a failed reader load from the two attempts (arXiv HTML, then the
+ *  server). A timeout means "slow or blocked"; a TypeError means the request
+ *  never reached anyone (offline / DNS / CORS); anything else means both
+ *  responded and simply had no usable text. */
+export function classifyReaderError(htmlError: unknown, serverError: unknown): ReaderErrorKind {
+  if (isTimeoutError(htmlError) || isTimeoutError(serverError)) return 'timeout'
+  if (htmlError instanceof TypeError || serverError instanceof TypeError) return 'network'
+  return 'no-html'
+}
+
+export function isTimeoutError(e: unknown): boolean {
+  const name = (e as { name?: string })?.name
+  return name === 'TimeoutError' || name === 'AbortError'
+}
+
+export const HTML_TIMEOUT_MS = 20_000
+export const SERVER_TIMEOUT_MS = 90_000
+
+export class HttpError extends Error {
+  constructor(public status: number) {
+    super(`HTTP ${status}`)
+    this.name = 'HttpError'
+  }
+}
+
+/** `fetch` with a deadline; the caller's signal still cancels it. */
+export async function fetchWithTimeout(url: string, ms: number, signal?: AbortSignal): Promise<Response> {
+  const ctrl = new AbortController()
+  const abort = () => ctrl.abort()
+  if (signal) {
+    if (signal.aborted) ctrl.abort()
+    else signal.addEventListener('abort', abort, { once: true })
+  }
+  const timer = setTimeout(() => ctrl.abort(timeoutError()), ms)
+  try {
+    return await fetch(url, { signal: ctrl.signal })
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
+function timeoutError(): Error {
+  const e = new Error('timeout')
+  e.name = 'TimeoutError'
+  return e
+}
+
+const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/**
+ * Build the reader document for content that came from the server (ar5iv, PDF
+ * text or an abstract). Rendering it as plain `<section>/<h2>/<p>` means the
+ * existing in-iframe machinery — outline, translation, highlights, AI
+ * selection — works unchanged on papers that have no arXiv HTML.
+ */
+export function synthesizeArticleHtml(content: ReaderContent, maxCharsPerParagraph = 900): string {
+  const title = escapeHtml(content.title || content.arxivId)
+  const body = content.sections
+    .map((section, i) => {
+      const id = `S${i}`
+      const heading = section.heading ? `<h2>${escapeHtml(section.heading)}</h2>` : ''
+      const paragraphs = splitParagraphs(section.text, maxCharsPerParagraph)
+        .map((p) => `<p>${escapeHtml(p)}</p>`)
+        .join('\n')
+      return `<section id="${id}">${heading}\n${paragraphs}</section>`
+    })
+    .join('\n')
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; max-width: 46rem; margin: 0 auto;
+         padding: 2rem 1.5rem 4rem; color: #111827; line-height: 1.75; }
+  h1 { font-size: 1.6rem; line-height: 1.35; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; }
+  p { margin: 0 0 1rem; }
+</style></head>
+<body class="ltx_document">
+<h1 class="ltx_title ltx_title_document">${title}</h1>
+${body}
+</body></html>`
+}
+
+/** Split long PDF-extracted text into translatable paragraphs. PDF text has no
+ *  paragraph breaks, so cut at sentence ends instead of sending a 3k-char block
+ *  to the translator as one unit. */
+export function splitParagraphs(text: string, maxChars = 900): string[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
+  const out: string[] = []
+  let current = ''
+  for (const sentence of splitSentences(trimmed)) {
+    if (current && current.length + 1 + sentence.length > maxChars) {
+      out.push(current)
+      current = sentence
+    } else {
+      current = current ? `${current} ${sentence}` : sentence
+    }
+  }
+  if (current) out.push(current)
+  return out
+}
+
+function splitSentences(text: string): string[] {
+  const out: string[] = []
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (!'.!?。！？'.includes(ch)) continue
+    const next = text[i + 1]
+    if (next !== undefined && next !== ' ') continue
+    out.push(text.slice(start, i + 1).trim())
+    start = i + 2
+    i += 1
+  }
+  if (start < text.length) out.push(text.slice(start).trim())
+  return out.filter(Boolean)
 }

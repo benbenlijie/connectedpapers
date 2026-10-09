@@ -1,14 +1,27 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, FileText, Loader2, Languages, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ExternalLink, FileText, Loader2, Languages, Sparkles } from 'lucide-react'
 import {
   arxivAbsUrl,
   arxivHtmlUrl,
   arxivPdfUrl,
+  classifyReaderError,
   extractOutline,
+  fetchWithTimeout,
+  HTML_TIMEOUT_MS,
+  HttpError,
+  isPaperSource,
+  readerErrorMessage,
   sanitizeArticleHtml,
+  SERVER_TIMEOUT_MS,
+  sourceNotice,
+  synthesizeArticleHtml,
   type OutlineItem,
+  type PaperSource,
+  type ReaderContent,
+  type ReaderErrorKind,
 } from '../lib/article'
+import { apiUrl } from '../lib/apiBase'
 import { fetchProviders, getCachedTranslation, prepareBrowserTranslator, translate, type PublicProvider } from '../lib/translator'
 import { createTranslationQueue } from '../lib/translationQueue'
 import AiAssistantPanel from '../components/AiAssistantPanel'
@@ -75,6 +88,12 @@ const ReaderPage: React.FC = () => {
   const [status, setStatus] = useState<Status>('loading')
   const [html, setHtml] = useState('')
   const [outline, setOutline] = useState<OutlineItem[]>([])
+  const [source, setSource] = useState<PaperSource | null>(null)
+  const [errorKind, setErrorKind] = useState<ReaderErrorKind>('no-html')
+  const [pdfMode, setPdfMode] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  // Set by the retry button so the next load ignores the server-side cache.
+  const refreshRef = useRef(false)
 
   const [providers, setProviders] = useState<PublicProvider[]>([])
   const [providersReady, setProvidersReady] = useState(false)
@@ -98,10 +117,16 @@ const ReaderPage: React.FC = () => {
   useEffect(() => {
     if (!arxivId) {
       setStatus('error')
+      setErrorKind('no-html')
       return
     }
     let cancelled = false
+    const refresh = refreshRef.current
+    refreshRef.current = false
+    const ctrl = new AbortController()
     setStatus('loading')
+    setSource(null)
+    setPdfMode(false)
     setTranslated(false)
     setTranslateError(null)
     setProgress({ done: 0, total: 0 })
@@ -112,25 +137,62 @@ const ReaderPage: React.FC = () => {
     sessionRef.current += 1
     scrollAbortRef.current?.abort()
     scrollAbortRef.current = null
-    fetch(arxivHtmlUrl(arxivId))
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.text()
-      })
-      .then((raw) => {
+
+    const showReady = (raw: string, from: PaperSource) => {
+      const clean = sanitizeArticleHtml(raw)
+      setHtml(clean)
+      setOutline(extractOutline(clean))
+      setSource(from)
+      setStatus('ready')
+    }
+
+    const load = async () => {
+      // 1) arXiv's own HTML build: full fidelity (figures, math, LaTeXML DOM).
+      let htmlError: unknown
+      try {
+        const res = await fetchWithTimeout(arxivHtmlUrl(arxivId), HTML_TIMEOUT_MS, ctrl.signal)
+        if (!res.ok) throw new HttpError(res.status)
+        const raw = await res.text()
+        if (!cancelled) showReady(raw, 'html')
+        return
+      } catch (e) {
+        htmlError = e
+      }
+      if (cancelled) return
+
+      // 2) Server-side fallbacks: ar5iv (no CORS header, so the browser cannot
+      //    read it) → PDF text → abstract, cached in paper_content.
+      try {
+        const query = refresh ? '?refresh=1' : ''
+        const res = await fetchWithTimeout(
+          apiUrl(`/reader/${encodeURIComponent(arxivId)}${query}`),
+          SERVER_TIMEOUT_MS,
+          ctrl.signal,
+        )
+        if (!res.ok) throw new HttpError(res.status)
+        const body = (await res.json()) as { data?: ReaderContent }
+        const data = body?.data
+        if (!data?.sections?.length) throw new HttpError(204)
         if (cancelled) return
-        const clean = sanitizeArticleHtml(raw)
-        setHtml(clean)
-        setOutline(extractOutline(clean))
-        setStatus('ready')
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('error')
-      })
+        showReady(synthesizeArticleHtml(data), isPaperSource(data.source) ? data.source : 'pdf')
+      } catch (serverError) {
+        if (cancelled) return
+        setErrorKind(classifyReaderError(htmlError, serverError))
+        setStatus('error')
+      }
+    }
+    void load()
+
     return () => {
       cancelled = true
+      ctrl.abort()
     }
-  }, [arxivId])
+  }, [arxivId, reloadKey])
+
+  const retry = useCallback((fresh: boolean) => {
+    refreshRef.current = fresh
+    setReloadKey((k) => k + 1)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -439,6 +501,7 @@ const ReaderPage: React.FC = () => {
   const abs = arxivId ? arxivAbsUrl(arxivId) : '#'
   const pdf = arxivId ? arxivPdfUrl(arxivId) : '#'
   const noProviders = providersReady && providers.length === 0
+  const notice = sourceNotice(source)
 
   return (
     <div className="flex h-screen flex-col bg-gray-900 text-white">
@@ -557,7 +620,7 @@ const ReaderPage: React.FC = () => {
           )}
         </aside>
 
-        <main className="relative flex-1 bg-white">
+        <main className="relative flex flex-1 flex-col bg-white">
           {(pendingAnchor || activeHl) && (
             <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-gray-800/95 px-3 py-2 text-xs text-white shadow-lg">
               {pendingAnchor ? (
@@ -634,17 +697,47 @@ const ReaderPage: React.FC = () => {
               )}
             </div>
           )}
+          {status === 'ready' && notice && (
+            <div className="flex items-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
+              <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="flex-1">{notice}</span>
+              <button
+                type="button"
+                onClick={() => retry(true)}
+                className="flex-shrink-0 rounded border border-amber-400 px-2 py-0.5 hover:bg-amber-100"
+              >
+                重新获取
+              </button>
+              <a href={pdf} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 underline">
+                查看 PDF
+              </a>
+            </div>
+          )}
           {status === 'loading' && (
-            <div className="flex h-full items-center justify-center bg-gray-900 text-gray-300">
+            <div className="flex flex-1 items-center justify-center bg-gray-900 text-gray-300">
               <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 正在加载论文…
             </div>
           )}
-          {status === 'error' && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 bg-gray-900 text-center">
+          {status === 'error' && !pdfMode && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-gray-900 text-center">
               <FileText className="h-10 w-10 text-gray-500" />
               <p className="text-gray-300">无法加载该论文的 HTML 版本</p>
-              <p className="text-sm text-gray-500">该论文可能没有 arXiv HTML 版，或网络受限。</p>
-              <div className="flex gap-3 text-sm">
+              <p className="text-sm text-gray-500">{readerErrorMessage(errorKind)}</p>
+              <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
+                <button
+                  type="button"
+                  onClick={() => retry(true)}
+                  className="rounded bg-blue-600 px-3 py-1 text-white hover:bg-blue-500"
+                >
+                  重试
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfMode(true)}
+                  className="rounded border border-gray-600 px-3 py-1 text-gray-200 hover:bg-gray-800"
+                >
+                  以 PDF 形式阅读
+                </button>
                 <a
                   href={abs}
                   target="_blank"
@@ -664,12 +757,20 @@ const ReaderPage: React.FC = () => {
               </div>
             </div>
           )}
+          {status === 'error' && pdfMode && (
+            <iframe
+              title="arXiv PDF"
+              data-testid="pdf-frame"
+              className="w-full flex-1 border-0"
+              src={pdf}
+            />
+          )}
           {status === 'ready' && (
             <iframe
               ref={frameRef}
               data-testid="reader-frame"
               title="arXiv HTML"
-              className="h-full w-full border-0"
+              className="w-full flex-1 border-0"
               sandbox="allow-same-origin"
               srcDoc={html}
               onLoad={handleFrameLoad}

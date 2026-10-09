@@ -2,8 +2,9 @@
 # One-command publish of the local tree to the public host.
 #
 # Usage:
-#   scripts/deploy.sh                 # build web + sync + restart + healthcheck
+#   scripts/deploy.sh                 # build web + sync + bun install + restart + healthcheck
 #   SKIP_WEB=1 scripts/deploy.sh      # backend/config-only change (no web build)
+#   SKIP_INSTALL=1 scripts/deploy.sh  # dependencies unchanged (no bun install)
 #   SKIP_RESTART=1 scripts/deploy.sh  # sync only
 #
 # Overridable env:
@@ -42,6 +43,15 @@ rsync -az --delete \
   --exclude 'user_input_files' \
   --exclude 'docs' \
   ./ "$REMOTE:$DIR/"
+
+# The server now has a runtime dependency (unpdf, for the PDF text fallback) and
+# node_modules is excluded from the sync, so the remote installs it itself.
+if [ "${SKIP_INSTALL:-0}" != "1" ]; then
+  echo "==> bun install on $REMOTE"
+  ssh "$REMOTE" "cd $DIR && bun install --frozen-lockfile --production"
+else
+  echo "==> skip bun install (SKIP_INSTALL=1)"
+fi
 
 if [ "${SKIP_RESTART:-0}" != "1" ]; then
   echo "==> restart $SERVICE"
