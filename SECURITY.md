@@ -40,6 +40,19 @@ If you ever paste a real key or token into an issue, a PR, a log, or a commit, t
 as compromised and rotate it at the provider immediately. Then remove it from the
 public history if it was committed.
 
+To keep credentials out of the repository in the first place, run the built-in scanner:
+
+```bash
+bash scripts/secret-scan.sh                  # scan the whole git history
+bash scripts/secret-scan.sh --install-hook   # also block leaks at commit time
+```
+
+The same scan runs in CI on every push and pull request
+(`.github/workflows/secret-scan.yml`), and GitHub push protection rejects a push that
+contains a recognised secret. Add an entry to `.gitleaks.toml` only when a finding is a
+genuine false positive — an allowlist is a permanent exemption, so never suppress a real
+key with it.
+
 ## Scope
 
 **In scope** — issues in this project's own code:

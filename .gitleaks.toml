@@ -1,0 +1,19 @@
+# gitleaks 配置：在默认规则集之上，追加本项目已知的误报白名单。
+#
+# 运行方式见 scripts/secret-scan.sh，CI 见 .github/workflows/secret-scan.yml。
+#
+# 追加白名单前请确认该条目确实不是凭据：白名单是永久豁免，
+# 一旦把真实密钥写进来，扫描器就再也不会提醒你。
+title = "connectedpapers"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = '''
+浏览器 localStorage 的缓存键名（cp.translations.v1 等），不是凭据。
+generic-api-key 规则会因变量名以 _KEY 结尾 + 字符串熵值达标而误判。
+'''
+paths = ['''academic-paper-explorer/src/lib/translator\.ts$''']
+regexTarget = "match"
+regexes = ['''TRANSLATION_STORAGE_KEY''']
