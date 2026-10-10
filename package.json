@@ -4,7 +4,7 @@
   "scripts": {
     "server": "bun --env-file=server/.env run server/main.ts",
     "opencode:local": "bun --env-file=server/.env run scripts/opencode-local.ts",
-    "test:server": "S2_MIN_INTERVAL_MS=0 bun test server/",
+    "test:server": "S2_MIN_INTERVAL_MS=0 ARXIV_API_MIN_INTERVAL_MS=0 ARXIV_CONTENT_MIN_INTERVAL_MS=0 bun test server/",
     "typecheck:server": "bunx tsc --noEmit -p server/tsconfig.json",
     "dev:web": "pnpm --dir academic-paper-explorer dev",
     "build:web": "pnpm --dir academic-paper-explorer build",

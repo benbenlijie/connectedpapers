@@ -1,6 +1,7 @@
 import { test, expect, beforeEach } from 'bun:test'
 import { openDb } from './db'
 import {
+  absUrl,
   ar5ivUrl,
   extractSections,
   getCachedContent,
@@ -144,9 +145,69 @@ test('paper source urls are version-less and validated', () => {
   expect(htmlUrl('2401.00001v2')).toBe('https://arxiv.org/html/2401.00001')
   expect(ar5ivUrl('2401.00001v2')).toBe('https://ar5iv.labs.arxiv.org/html/2401.00001')
   expect(pdfUrl('2401.00001v3')).toBe('https://arxiv.org/pdf/2401.00001')
+  expect(absUrl('2401.00001v3')).toBe('https://arxiv.org/abs/2401.00001')
   expect(isArxivId('2401.00001')).toBe(true)
   expect(isArxivId('2401.00001v2')).toBe(true)
   expect(isArxivId('math.GT/0309136')).toBe(true)
   expect(isArxivId('../../etc/passwd')).toBe(false)
   expect(isArxivId('2401.00001/../x')).toBe(false)
+})
+
+test("'off' mode never touches a content page, links out, and stores nothing", async () => {
+  const calls: string[] = []
+  const fetchImpl = (async (url: string) => {
+    calls.push(String(url))
+    return new Response(HTML, { status: 200 })
+  }) as unknown as typeof fetch
+
+  const out = await loadPaperContent(
+    '2401.00020',
+    fetchImpl,
+    db,
+    async () => ({ title: 'Withheld Paper', abstract: 'Only the abstract.' }),
+    168,
+    false,
+    'off',
+  )
+
+  expect(calls).toHaveLength(0)
+  expect(out.source).toBe('abstract')
+  expect(out.sections[0].text).toContain('Only the abstract')
+  expect(out.fullTextWithheld).toBe(true)
+  expect(out.arxivUrl).toBe('https://arxiv.org/abs/2401.00020')
+  // Nothing third-party may be written down on a withholding instance.
+  expect(getCachedContent('2401.00020', db)).toBeNull()
+})
+
+test("'off' mode remembers the abstract instead of re-asking arXiv every view", async () => {
+  let asked = 0
+  const fetchImpl = (async () => {
+    throw new Error('content must not be fetched')
+  }) as unknown as typeof fetch
+  const fallback = async () => {
+    asked++
+    return { title: 'T', abstract: 'A.' }
+  }
+
+  const first = await loadPaperContent('2401.00021', fetchImpl, db, fallback, 168, false, 'off')
+  const second = await loadPaperContent('2401.00021', fetchImpl, db, fallback, 168, false, 'off')
+  expect(first).toEqual(second)
+  expect(asked).toBe(1)
+})
+
+test("'off' mode hides full text already on disk but still serves abstracts", () => {
+  saveContent(
+    { arxivId: '2401.00022', title: 'T', sections: [{ idx: 0, heading: 'H', text: 'body' }], source: 'html' },
+    168,
+    db,
+  )
+  expect(getCachedContent('2401.00022', db, 'full')?.source).toBe('html')
+  expect(getCachedContent('2401.00022', db, 'off')).toBeNull()
+
+  saveContent(
+    { arxivId: '2401.00023', title: 'A', sections: [{ idx: 0, heading: 'Abstract', text: 'abs' }], source: 'abstract' },
+    168,
+    db,
+  )
+  expect(getCachedContent('2401.00023', db, 'off')?.source).toBe('abstract')
 })

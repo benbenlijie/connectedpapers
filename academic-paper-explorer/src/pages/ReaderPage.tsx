@@ -16,6 +16,7 @@ import {
   SERVER_TIMEOUT_MS,
   sourceNotice,
   synthesizeArticleHtml,
+  withheldNotice,
   type OutlineItem,
   type PaperSource,
   type ReaderContent,
@@ -94,6 +95,7 @@ const ReaderPage: React.FC = () => {
   const [html, setHtml] = useState('')
   const [outline, setOutline] = useState<OutlineItem[]>([])
   const [source, setSource] = useState<PaperSource | null>(null)
+  const [withheld, setWithheld] = useState(false)
   const [errorKind, setErrorKind] = useState<ReaderErrorKind>('no-html')
   const [pdfMode, setPdfMode] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -131,6 +133,7 @@ const ReaderPage: React.FC = () => {
     const ctrl = new AbortController()
     setStatus('loading')
     setSource(null)
+    setWithheld(false)
     setPdfMode(false)
     setTranslated(false)
     setTranslateError(null)
@@ -179,6 +182,7 @@ const ReaderPage: React.FC = () => {
         const data = body?.data
         if (!data?.sections?.length) throw new HttpError(204)
         if (cancelled) return
+        setWithheld(Boolean(data.fullTextWithheld))
         showReady(synthesizeArticleHtml(data), isPaperSource(data.source) ? data.source : 'pdf')
       } catch (serverError) {
         if (cancelled) return
@@ -506,7 +510,7 @@ const ReaderPage: React.FC = () => {
   const abs = arxivId ? arxivAbsUrl(arxivId) : '#'
   const pdf = arxivId ? arxivPdfUrl(arxivId) : '#'
   const noProviders = providersReady && providers.length === 0
-  const notice = sourceNotice(source)
+  const notice = withheld ? withheldNotice() : sourceNotice(source)
 
   return (
     <div className="flex h-screen flex-col bg-gray-900 text-white">

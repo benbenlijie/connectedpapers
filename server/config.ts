@@ -2,6 +2,28 @@ import { env } from './env'
 
 const num = (v: string | undefined, d: number) => (v ? Number(v) : d)
 
+/** Hostnames only the operator of this instance can reach. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0:0:0:0:0:0:0:1'])
+
+export type PaperContentMode = 'full' | 'off'
+
+/**
+ * May this instance fetch, store and serve arXiv full text?
+ *
+ * arXiv's API terms allow retrieving and storing the *content* of e-prints "for
+ * your own personal use, or for research purposes", and forbid storing and
+ * serving e-prints from your servers unless the licence permits redistribution
+ * (https://info.arxiv.org/help/api/tou.html). A loopback instance has exactly
+ * one reader — the operator — so the full reader stays on there. An instance
+ * other people can reach defaults to abstract plus a link to arXiv, and the
+ * operator has to opt in explicitly with PAPER_CONTENT_MODE=full.
+ */
+export function resolvePaperContentMode(explicit: string | undefined, hostname: string): PaperContentMode {
+  const v = explicit?.trim().toLowerCase()
+  if (v === 'full' || v === 'off') return v
+  return LOOPBACK_HOSTS.has(hostname) ? 'full' : 'off'
+}
+
 export const config = {
   crawl: {
     maxExecutionMs: num(Bun.env.CRAWL_MAX_MS, 45000),
@@ -53,7 +75,29 @@ export const config = {
     /** Force offline: only walk relations already stored in SQLite. */
     localOnly: (Bun.env.CONNECT_LOCAL_ONLY ?? '0') === '1',
   },
-  arxiv: { base: 'http://export.arxiv.org/api' },
+  arxiv: {
+    base: 'http://export.arxiv.org/api',
+    /**
+     * arXiv API terms of use: "make no more than one request every three
+     * seconds, and limit requests to a single connection at a time."
+     * https://info.arxiv.org/help/api/tou.html
+     */
+    apiMinIntervalMs: num(Bun.env.ARXIV_API_MIN_INTERVAL_MS, 3000),
+    /**
+     * Floor between on-demand fetches of a paper's HTML/PDF.
+     *
+     * arxiv.org/robots.txt asks every crawler for `Crawl-delay: 15`. This is not
+     * a crawler: it fetches at most one page per paper the user is opening right
+     * now, caches it, and never walks the site. So the floor is a politeness
+     * guard against a burst of readers, not the crawler delay — raise it to
+     * 15000 for a strictly literal reading, or leave the full-text reader off
+     * entirely on a public instance.
+     */
+    contentMinIntervalMs: num(Bun.env.ARXIV_CONTENT_MIN_INTERVAL_MS, 1000),
+    /** Circuit breaker: stop fetching content after this many pages in an hour. */
+    contentMaxPerHour: num(Bun.env.ARXIV_CONTENT_MAX_PER_HOUR, 60),
+    contentMode: resolvePaperContentMode(Bun.env.PAPER_CONTENT_MODE, env.hostname),
+  },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',
     // When set, do NOT spawn opencode locally; connect to this base URL instead

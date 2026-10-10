@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite'
 import { db as defaultDb } from './db'
 import { getArxiv } from './arxiv'
 import { pdfToText, sectionsFromPdfText, titleFromPdfText } from './pdf-text'
+import { config, type PaperContentMode } from './config'
+import { createLimiter, createRateLimiter } from './rateLimit'
 
 export interface PaperSection {
   idx: number
@@ -24,6 +26,14 @@ export interface PaperContent {
   title: string
   sections: PaperSection[]
   source: PaperSource
+  /**
+   * The full text was deliberately not fetched, or not served, because this
+   * instance is reachable by other people and arXiv's terms do not allow serving
+   * their e-prints from a server. The reader links out to arXiv instead.
+   */
+  fullTextWithheld?: boolean
+  /** Canonical abstract page, so a withholding instance has somewhere to point. */
+  arxivUrl?: string
 }
 
 export interface AbstractFallback {
@@ -49,6 +59,12 @@ export function ar5ivUrl(arxivId: string): string {
 
 export function pdfUrl(arxivId: string): string {
   return `https://arxiv.org/pdf/${stripVersion(arxivId)}`
+}
+
+/** Canonical abstract page — where arXiv asks anyone pointing at an e-print to
+ *  send readers. */
+export function absUrl(arxivId: string): string {
+  return `https://arxiv.org/abs/${stripVersion(arxivId)}`
 }
 
 const NEW_STYLE_ID = /^\d{4}\.\d{4,5}(v\d+)?$/
@@ -109,11 +125,19 @@ export async function extractSections(html: string): Promise<{ title: string; se
   return { title: title.replace(/\s+/g, ' ').trim(), sections: cleaned }
 }
 
-export function getCachedContent(arxivId: string, dbIn: Database = defaultDb): PaperContent | null {
+export function getCachedContent(
+  arxivId: string,
+  dbIn: Database = defaultDb,
+  mode: PaperContentMode = config.arxiv.contentMode,
+): PaperContent | null {
   const head = dbIn
     .query("select arxiv_id, title, source from paper_content where arxiv_id=? and expires_at > datetime('now')")
     .get(arxivId) as { arxiv_id: string; title: string; source: string } | null
   if (!head) return null
+  // A withholding instance must not serve e-print text that is already on disk,
+  // whether it stored it itself before the setting changed or was synced in.
+  // Abstracts are CC0 metadata and stay readable either way.
+  if (mode === 'off' && head.source !== 'abstract') return null
   const rows = dbIn
     .query('select idx, heading, text from paper_sections where arxiv_id=? order by idx')
     .all(arxivId) as { idx: number; heading: string; text: string }[]
@@ -147,9 +171,26 @@ export function saveContent(content: PaperContent, ttlHours: number, dbIn: Datab
   write()
 }
 
-const USER_AGENT = { 'User-Agent': 'Academic-Paper-Explorer/1.0' }
+const USER_AGENT = { 'User-Agent': 'CiteDuo/0.1.0 (+https://github.com/benbenlijie/citeduo)' }
 const HTML_TIMEOUT_MS = 20_000
 const PDF_TIMEOUT_MS = 60_000
+
+/** Politeness floor between content fetches; see config.arxiv.contentMinIntervalMs. */
+const contentLimiter = createLimiter(config.arxiv.contentMinIntervalMs)
+/** Hourly circuit breaker, so a loop over paper ids cannot look like a crawler. */
+const contentBudget = createRateLimiter({ windowMs: 3_600_000, max: config.arxiv.contentMaxPerHour })
+
+/**
+ * Run one content fetch under the politeness floor and the hourly budget.
+ * Exhausting the budget rejects, which callers treat like any other failed
+ * source: try the next one, then fall back to the abstract.
+ */
+function fetchContent<T>(fn: () => Promise<T>): Promise<T> {
+  if (!contentBudget('arxiv-content')) {
+    return Promise.reject(new Error('arxiv content budget exhausted for this hour'))
+  }
+  return contentLimiter(fn)
+}
 
 /**
  * Sources that yield structured sections, tried in order. `html` is arXiv's own
@@ -167,7 +208,9 @@ async function extractFromHtml(
   url: string,
   fetchImpl: typeof fetch,
 ): Promise<PaperContent> {
-  const res = await fetchImpl(url, { headers: USER_AGENT, signal: AbortSignal.timeout(HTML_TIMEOUT_MS) })
+  const res = await fetchContent(() =>
+    fetchImpl(url, { headers: USER_AGENT, signal: AbortSignal.timeout(HTML_TIMEOUT_MS) }),
+  )
   if (!res.ok) throw new Error(`${source} HTTP ${res.status}`)
   const { title, sections } = await extractSections(await res.text())
   // ar5iv answers 200 with a plain abstract page when it has no conversion, so
@@ -177,12 +220,31 @@ async function extractFromHtml(
 }
 
 async function extractFromPdf(arxivId: string, fetchImpl: typeof fetch): Promise<PaperContent> {
-  const res = await fetchImpl(pdfUrl(arxivId), { headers: USER_AGENT, signal: AbortSignal.timeout(PDF_TIMEOUT_MS) })
+  const res = await fetchContent(() =>
+    fetchImpl(pdfUrl(arxivId), { headers: USER_AGENT, signal: AbortSignal.timeout(PDF_TIMEOUT_MS) }),
+  )
   if (!res.ok) throw new Error(`pdf HTTP ${res.status}`)
   const text = await pdfToText(new Uint8Array(await res.arrayBuffer()))
   const sections = sectionsFromPdfText(text)
   if (sections.length === 0) throw new Error('pdf: no sections')
   return { arxivId, title: titleFromPdfText(text), sections, source: 'pdf' }
+}
+
+/**
+ * Abstracts are CC0 metadata, so holding them in memory is fine, and it keeps a
+ * withholding instance from re-asking arXiv on every reader page view. Small and
+ * bounded on purpose: this is a cache, not a store.
+ */
+const ABSTRACT_MEMO_MAX = 500
+const abstractMemo = new Map<string, PaperContent>()
+
+function memoizeAbstract(content: PaperContent): PaperContent {
+  if (abstractMemo.size >= ABSTRACT_MEMO_MAX) {
+    const oldest = abstractMemo.keys().next().value
+    if (oldest !== undefined) abstractMemo.delete(oldest)
+  }
+  abstractMemo.set(content.arxivId, content)
+  return content
 }
 
 /**
@@ -193,6 +255,11 @@ async function extractFromPdf(arxivId: string, fetchImpl: typeof fetch): Promise
  *
  * Every stage but the last swallows its error: a missing HTML build, a blocked
  * mirror or an unparseable PDF just means trying the next one.
+ *
+ * When `mode` is 'off' the content stages are skipped and nothing third-party is
+ * written to disk: the caller gets the CC0 abstract plus a link to arXiv. See
+ * `resolvePaperContentMode` in config.ts for why that is the default on an
+ * instance other people can reach.
  */
 export async function loadPaperContent(
   arxivId: string,
@@ -201,14 +268,31 @@ export async function loadPaperContent(
   abstractFallback: (id: string) => Promise<AbstractFallback> = getArxiv,
   ttlHours = 168,
   forceRefresh = false,
+  mode: PaperContentMode = config.arxiv.contentMode,
 ): Promise<PaperContent> {
-  if (!forceRefresh) {
-    const cached = getCachedContent(arxivId, dbIn)
+  if (!forceRefresh && mode === 'full') {
+    const cached = getCachedContent(arxivId, dbIn, mode)
     if (cached) return cached
   }
 
   let fallbackPromise: Promise<AbstractFallback> | null = null
   const fallback = () => (fallbackPromise ??= abstractFallback(arxivId))
+
+  if (mode === 'off') {
+    if (!forceRefresh) {
+      const memo = abstractMemo.get(arxivId)
+      if (memo) return memo
+    }
+    const fb = await fallback()
+    return memoizeAbstract({
+      arxivId,
+      title: fb.title,
+      source: 'abstract',
+      sections: [{ idx: 0, heading: 'Abstract', text: fb.abstract }],
+      fullTextWithheld: true,
+      arxivUrl: absUrl(arxivId),
+    })
+  }
 
   for (const { source, url } of TEXT_SOURCES) {
     try {
@@ -240,6 +324,7 @@ export async function loadPaperContent(
     title: fb.title,
     source: 'abstract',
     sections: [{ idx: 0, heading: 'Abstract', text: fb.abstract }],
+    arxivUrl: absUrl(arxivId),
   }
   saveContent(content, ttlHours, dbIn)
   return content

@@ -116,6 +116,11 @@ export interface ReaderContent {
   title: string
   sections: ReaderSection[]
   source: PaperSource
+  /** The server withheld the full text on purpose (arXiv content policy), rather
+   *  than failing to find it. */
+  fullTextWithheld?: boolean
+  /** Canonical arXiv abstract page, for linking out when text is withheld. */
+  arxivUrl?: string
 }
 
 export function isPaperSource(v: unknown): v is PaperSource {
@@ -134,6 +139,12 @@ export function sourceNotice(source: PaperSource | null): string | null {
     default:
       return null
   }
+}
+
+/** Notice for an instance that withholds third-party full text by policy — a
+ *  deliberate choice, not a failed fetch, so it says why and where to go. */
+export function withheldNotice(): string {
+  return '这个实例对他人开放，按 arXiv 的使用条款不缓存也不对外提供论文全文，因此这里只显示摘要与元数据。阅读原文请点右上角的 arXiv 链接。'
 }
 
 export type ReaderErrorKind = 'no-html' | 'timeout' | 'network'

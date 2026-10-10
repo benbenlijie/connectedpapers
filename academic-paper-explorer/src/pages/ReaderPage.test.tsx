@@ -238,6 +238,29 @@ describe('ReaderPage', () => {
     expect(screen.getByText(/PDF 自动抽取/)).toBeInTheDocument()
   })
 
+  it('explains a policy-withheld paper instead of blaming the fetch', async () => {
+    mockSources({
+      server: () => ({
+        ok: true,
+        json: async () => ({
+          data: {
+            arxivId: '2401.00001',
+            title: 'Withheld Paper',
+            source: 'abstract',
+            fullTextWithheld: true,
+            arxivUrl: 'https://arxiv.org/abs/2401.00001',
+            sections: [{ idx: 0, heading: 'Abstract', text: 'Abstract only.' }],
+          },
+        }),
+      }),
+    })
+    renderReader()
+
+    await screen.findByTestId('reader-frame')
+    expect(screen.getByText(/按 arXiv 的使用条款不缓存也不对外提供论文全文/)).toBeInTheDocument()
+    expect(screen.queryByText(/仅显示摘要/)).not.toBeInTheDocument()
+  })
+
   it('retries through the server with refresh=1', async () => {
     const calls: string[] = []
     mockSources({ server: () => serverContent, onRequest: (u) => calls.push(u) })
