@@ -82,6 +82,17 @@
 
 ## 快速开始
 
+机器上只有 Docker？一条命令，不用注册、不用配置文件：
+
+```bash
+docker run -d --name citeduo -p 8787:8787 -v citeduo-data:/data ghcr.io/benbenlijie/citeduo:latest
+# → http://127.0.0.1:8787
+```
+
+或者用 compose（它会为单人实例设置 `PAPER_CONTENT_MODE=full`）：`docker compose up --build`。
+
+### 从源码跑
+
 需要 **[Bun](https://bun.sh) ≥ 1.3** 与 **pnpm 9**。
 
 ```bash

@@ -83,6 +83,17 @@ Two papers side by side, each with its own citation graph, sharing the filters a
 
 ## Quick start
 
+Nothing installed but Docker? One command, no account, no config file:
+
+```bash
+docker run -d --name citeduo -p 8787:8787 -v citeduo-data:/data ghcr.io/benbenlijie/citeduo:latest
+# → http://127.0.0.1:8787
+```
+
+Or with compose, which sets `PAPER_CONTENT_MODE=full` for a single-user instance: `docker compose up --build`.
+
+### From source
+
 Requires **[Bun](https://bun.sh) ≥ 1.3** and **pnpm 9**.
 
 ```bash
