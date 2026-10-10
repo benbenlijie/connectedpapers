@@ -146,7 +146,9 @@ describe('orderReferences', () => {
       { paperId: 'z', citationCount: 10 },
       { paperId: 'a', citationCount: 10 },
     ]
-    expect(orderReferences(refs, new Set(), 10).map((r) => r.paperId)).toEqual(['a', 'z'])
+    for (const input of [refs, [...refs].reverse()]) {
+      expect(orderReferences(input, new Set(), 10).map((r) => r.paperId)).toEqual(['a', 'z'])
+    }
   })
 })
 
@@ -167,7 +169,9 @@ describe('pickFrontier', () => {
       { paperId: 'z', citationCount: 10 },
       { paperId: 'a', citationCount: 10 },
     ]
-    expect(pickFrontier(candidates, new Set(), 2)).toEqual(['a', 'z'])
+    for (const input of [candidates, [...candidates].reverse()]) {
+      expect(pickFrontier(input, new Set(), 2)).toEqual(['a', 'z'])
+    }
   })
 })
 
