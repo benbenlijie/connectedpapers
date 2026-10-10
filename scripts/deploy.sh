@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command publish of the local tree to the public host.
+# One-command publish of the local tree to a host you own.
 #
 # Usage:
 #   scripts/deploy.sh                 # build web + sync + bun install + restart + healthcheck
@@ -7,23 +7,42 @@
 #   SKIP_INSTALL=1 scripts/deploy.sh  # dependencies unchanged (no bun install)
 #   SKIP_RESTART=1 scripts/deploy.sh  # sync only
 #
-# Overridable env:
-#   REMOTE=webserver           ssh host/alias
-#   DIR=/opt/connectedpapers   remote install dir
-#   VITE_BASE=/papers/         frontend base path (must match the nginx sub-path)
-#   SERVICE=connectedpapers    systemd unit name
-#   PUBLIC_URL=https://watchdeep.net/papers/
-#   REMOTE_BUN=/root/.bun/bin/bun   remote bun binary (used when not on PATH)
+# Configuration lives in scripts/deploy.env, which is git-ignored on purpose: it
+# names your host, paths and public URL, and those are nobody else's business.
+# Copy scripts/deploy.env.example and fill it in. Anything can still be overridden
+# from the environment, which wins over the file:
+#
+#   REMOTE=myhost                    ssh host/alias to deploy to (required)
+#   DIR=/opt/citeduo                 remote install dir
+#   VITE_BASE=/papers/               frontend base path (must match your proxy sub-path)
+#   SERVICE=citeduo                  systemd unit name
+#   PUBLIC_URL=https://example.com/papers/   healthcheck URL (skipped when empty)
+#   REMOTE_BUN=/root/.bun/bin/bun    remote bun binary (used when not on PATH)
 set -euo pipefail
 
-REMOTE="${REMOTE:-webserver}"
-DIR="${DIR:-/opt/connectedpapers}"
-VITE_BASE="${VITE_BASE:-/papers/}"
-SERVICE="${SERVICE:-connectedpapers}"
-PUBLIC_URL="${PUBLIC_URL:-https://watchdeep.net/papers/}"
-REMOTE_BUN="${REMOTE_BUN:-/root/.bun/bin/bun}"
-
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONF="${DEPLOY_CONF:-$ROOT/scripts/deploy.env}"
+if [ -f "$CONF" ]; then
+  # shellcheck disable=SC1090
+  set -a
+  . "$CONF"
+  set +a
+fi
+
+REMOTE="${REMOTE:-}"
+DIR="${DIR:-/opt/citeduo}"
+VITE_BASE="${VITE_BASE:-/}"
+SERVICE="${SERVICE:-citeduo}"
+PUBLIC_URL="${PUBLIC_URL:-}"
+REMOTE_BUN="${REMOTE_BUN:-bun}"
+
+if [ -z "$REMOTE" ]; then
+  echo "deploy: REMOTE is unset." >&2
+  echo "        cp scripts/deploy.env.example scripts/deploy.env and fill it in," >&2
+  echo "        or run: REMOTE=myhost scripts/deploy.sh" >&2
+  exit 1
+fi
+
 cd "$ROOT"
 
 if [ "${SKIP_WEB:-0}" != "1" ]; then
@@ -46,7 +65,7 @@ rsync -az --delete \
   --exclude 'docs' \
   ./ "$REMOTE:$DIR/"
 
-# The server now has a runtime dependency (unpdf, for the PDF text fallback) and
+# The server has a runtime dependency (unpdf, for the PDF text fallback) and
 # node_modules is excluded from the sync, so the remote installs it itself.
 # bun is often missing from a non-interactive ssh PATH (the systemd unit uses an
 # absolute path), so fall back to REMOTE_BUN.
@@ -64,6 +83,10 @@ else
   echo "==> skip restart (SKIP_RESTART=1)"
 fi
 
-echo "==> healthcheck"
-ssh "$REMOTE" "curl -s -o /dev/null -w '  $PUBLIC_URL -> %{http_code}\n' '$PUBLIC_URL' || true"
+if [ -n "$PUBLIC_URL" ]; then
+  echo "==> healthcheck"
+  ssh "$REMOTE" "curl -s -o /dev/null -w '  $PUBLIC_URL -> %{http_code}\n' '$PUBLIC_URL' || true"
+else
+  echo "==> healthcheck skipped (PUBLIC_URL unset)"
+fi
 echo "done."

@@ -11,7 +11,7 @@
 ## 1. 初始化
 
 ```bash
-git clone <repo> && cd connectedpapers
+git clone <repo> && cd citeduo
 bash scripts/setup.sh
 ```
 
@@ -83,7 +83,7 @@ autossh -M 0 -N -T -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
   -o ExitOnForwardFailure=yes -R 127.0.0.1:4096:127.0.0.1:4097 webserver
 ```
 
-建议用 systemd user 服务常驻这两条（参考 `connectedpapers-mtcode-tunnel.service`）。若本机关机/断网，AI 助手不可用，翻译不受影响。
+建议用 systemd user 服务常驻这两条（参考 `citeduo-mtcode-tunnel.service`）。若本机关机/断网，AI 助手不可用，翻译不受影响。
 
 ## 4. 常驻运行（可选）
 
@@ -95,7 +95,7 @@ nohup bun run server > server.log 2>&1 &
 
 ### systemd（用户级服务示例）
 
-创建 `~/.config/systemd/user/connectedpapers.service`：
+创建 `~/.config/systemd/user/citeduo.service`：
 
 ```ini
 [Unit]
@@ -103,7 +103,7 @@ Description=ConnectedPapers local server
 After=network.target
 
 [Service]
-WorkingDirectory=%h/Documents/projects/connectedpapers
+WorkingDirectory=%h/Documents/projects/citeduo
 ExecStart=/usr/bin/env bun run server
 Restart=on-failure
 
@@ -113,7 +113,7 @@ WantedBy=default.target
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now connectedpapers.service
+systemctl --user enable --now citeduo.service
 ```
 
 ## 注意事项
@@ -133,7 +133,7 @@ systemctl --user enable --now connectedpapers.service
 ### 5.2 服务器准备
 ```bash
 # 安装 Bun / pnpm（见官方文档），然后：
-git clone <repo> && cd connectedpapers
+git clone <repo> && cd citeduo
 bash scripts/setup.sh
 bun run build:web
 ```
@@ -153,7 +153,7 @@ OPENCODE_BIN=/usr/local/bin/opencode  # AI 助手需要；不在 PATH 时填绝�
 ```
 
 ### 5.3 systemd 常驻（系统级）
-`/etc/systemd/system/connectedpapers.service`：
+`/etc/systemd/system/citeduo.service`：
 ```ini
 [Unit]
 Description=ConnectedPapers
@@ -161,7 +161,7 @@ After=network.target
 
 [Service]
 User=www-data
-WorkingDirectory=/srv/connectedpapers
+WorkingDirectory=/srv/citeduo
 ExecStart=/home/www-data/.bun/bin/bun run server
 Restart=on-failure
 Environment=NODE_ENV=production
@@ -170,7 +170,7 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 ```
 ```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now connectedpapers
+sudo systemctl daemon-reload && sudo systemctl enable --now citeduo
 ```
 
 ### 5.4 nginx 反向代理
@@ -217,7 +217,7 @@ sudo ufw deny 8787/tcp   # 应用端口不对外
 ### 5.8 备份与更新
 ```bash
 cp data/app.db data/app.db.bak        # 备份
-git pull && bun run build:web && sudo systemctl restart connectedpapers
+git pull && bun run build:web && sudo systemctl restart citeduo
 ```
 
 ## 6. 子路径挂载（例如 https://watchdeep.net/papers/）
@@ -243,15 +243,22 @@ location /papers/ {
 
 ## 7. 快速更新（本地改完一键发布）
 
-线上已按 §6 部署在 `https://watchdeep.net/papers/`（systemd `connectedpapers`，目录 `/opt/connectedpapers`）。日常改代码后：
+先配置一次部署目标。`scripts/deploy.env` 已被 git 忽略，主机名与内网路径不会进入公开仓库：
+
+```bash
+cp scripts/deploy.env.example scripts/deploy.env
+$EDITOR scripts/deploy.env      # REMOTE / DIR / VITE_BASE / SERVICE / PUBLIC_URL
+```
+
+之后日常改完代码：
 
 ```bash
 bun run deploy          # = bash scripts/deploy.sh
 ```
 
-脚本会：按 `VITE_BASE=/papers/` 构建前端 → `rsync` 同步（排除 .git/node_modules/data/server/.env）→ 远端 `bun install --frozen-lockfile --production` → `systemctl restart connectedpapers` → 健康检查。
+脚本会：按 `VITE_BASE` 构建前端 → `rsync` 同步（排除 .git/node_modules/data/server/.env/docs）→ 远端 `bun install --frozen-lockfile --production` → `systemctl restart $SERVICE` → 健康检查 `$PUBLIC_URL`（留空则跳过）。
 
-常用变体：
+常用变体（环境变量优先于 `deploy.env`）：
 
 ```bash
 SKIP_WEB=1 bun run deploy      # 只改了后端/配置，跳过前端构建
@@ -260,7 +267,7 @@ SKIP_RESTART=1 bun run deploy  # 只同步，不重启
 REMOTE=other-host DIR=/srv/app VITE_BASE=/base/ bun run deploy
 ```
 
-参数见 `scripts/deploy.sh` 头部。查看访问口令：`ssh webserver "grep ^ACCESS_TOKEN= /opt/connectedpapers/server/.env"`。
+参数见 `scripts/deploy.sh` 头部。查看访问口令：`ssh "$REMOTE" "grep ^ACCESS_TOKEN= $DIR/server/.env"`。
 
 ## 验证
 

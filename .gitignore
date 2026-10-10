@@ -107,6 +107,7 @@ storybook-static
 
 # Temporary folders
 tmp/
+.tmp/
 temp/
 
 # IDE 和编辑器文件
@@ -168,3 +169,6 @@ sub_tasks/
 todo.md
 user_input_files/
 .omo/
+
+# local deploy target (host names, paths)
+scripts/deploy.env
