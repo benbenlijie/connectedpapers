@@ -99,7 +99,7 @@ nohup bun run server > server.log 2>&1 &
 
 ```ini
 [Unit]
-Description=ConnectedPapers local server
+Description=CiteDuo local server
 After=network.target
 
 [Service]
@@ -156,7 +156,7 @@ OPENCODE_BIN=/usr/local/bin/opencode  # AI 助手需要；不在 PATH 时填绝�
 `/etc/systemd/system/citeduo.service`：
 ```ini
 [Unit]
-Description=ConnectedPapers
+Description=CiteDuo
 After=network.target
 
 [Service]

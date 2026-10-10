@@ -94,7 +94,11 @@ async function aiAvailable(): Promise<boolean> {
 }
 
 if (opencodeManager) {
-  opencodeManager.start().catch((e) => console.error('[opencode] failed to start:', e))
+  opencodeManager.start().catch((e) => {
+    // The assistant is optional, so a missing binary belongs in one calm line,
+    // not as the stack trace that greets a first `docker run`.
+    console.warn(`[opencode] assistant unavailable: ${e instanceof Error ? e.message : String(e)}`)
+  })
   const shutdown = async () => {
     try {
       await opencodeManager.stop()
@@ -185,4 +189,4 @@ server = Bun.serve({
   },
 })
 
-console.log(`ConnectedPapers local server → http://${server.hostname}:${server.port}`)
+console.log(`CiteDuo local server → http://${server.hostname}:${server.port}`)
