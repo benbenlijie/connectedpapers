@@ -45,6 +45,13 @@ import {
 
 const KNOWN_TYPES = new Set<string>(['reference', 'citation', 'related', 'coupling', 'semantic'])
 
+/** Rank popular papers first, with a stable fallback for tied citation counts. */
+function byCitations<T extends { paperId: string; citationCount?: number }>(a: T, b: T): number {
+  const count = (b.citationCount ?? 0) - (a.citationCount ?? 0)
+  if (count !== 0) return count
+  return a.paperId < b.paperId ? -1 : a.paperId > b.paperId ? 1 : 0
+}
+
 /** Every relation already known to SQLite, as traversal edges. */
 export function loadLocalEdges(dbIn: Database = defaultDb): PathEdge[] {
   const out: PathEdge[] = []
@@ -87,7 +94,6 @@ export function orderReferences<T extends { paperId: string; citationCount?: num
   const priority: T[] = []
   const rest: T[] = []
   for (const r of refs) (shared.has(r.paperId) ? priority : rest).push(r)
-  const byCitations = (a: T, b: T) => (b.citationCount ?? 0) - (a.citationCount ?? 0)
   priority.sort(byCitations)
   rest.sort(byCitations)
   return [...priority, ...rest].slice(0, limit)
@@ -101,7 +107,7 @@ export function pickFrontier(
 ): string[] {
   const out: string[] = []
   const taken = new Set<string>()
-  const ranked = [...candidates].sort((a, b) => (b.citationCount ?? 0) - (a.citationCount ?? 0))
+  const ranked = [...candidates].sort(byCitations)
   for (const c of ranked) {
     if (seen.has(c.paperId) || taken.has(c.paperId)) continue
     taken.add(c.paperId)

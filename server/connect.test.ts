@@ -140,6 +140,16 @@ describe('orderReferences', () => {
     const refs = Array.from({ length: 10 }, (_, i) => ({ paperId: `p${i}`, citationCount: i }))
     expect(orderReferences(refs, new Set(), 3)).toHaveLength(3)
   })
+
+  test('breaks equal citation counts by paper id regardless of input order', () => {
+    const refs = [
+      { paperId: 'z', citationCount: 10 },
+      { paperId: 'a', citationCount: 10 },
+    ]
+    for (const input of [refs, [...refs].reverse()]) {
+      expect(orderReferences(input, new Set(), 10).map((r) => r.paperId)).toEqual(['a', 'z'])
+    }
+  })
 })
 
 describe('pickFrontier', () => {
@@ -152,6 +162,16 @@ describe('pickFrontier', () => {
       { paperId: 'c', citationCount: 1 },
     ]
     expect(pickFrontier(candidates, new Set(['seen']), 2)).toEqual(['b', 'a'])
+  })
+
+  test('breaks equal citation counts by paper id regardless of input order', () => {
+    const candidates = [
+      { paperId: 'z', citationCount: 10 },
+      { paperId: 'a', citationCount: 10 },
+    ]
+    for (const input of [candidates, [...candidates].reverse()]) {
+      expect(pickFrontier(input, new Set(), 2)).toEqual(['a', 'z'])
+    }
   })
 })
 
