@@ -53,6 +53,40 @@ contains a recognised secret. Add an entry to `.gitleaks.toml` only when a findi
 genuine false positive — an allowlist is a permanent exemption, so never suppress a real
 key with it.
 
+### Rotating a leaked key
+
+A key that was ever visible is compromised, even if the commit was amended or the file
+deleted afterwards: rewriting history does not un-send it to anyone who already fetched,
+and copies may sit in forks, caches or CI logs. Rotate first, clean up second.
+
+1. **Revoke at the provider, then issue a new key.** Rotating means invalidating the old
+   one — issuing a second key alongside it leaves the leak live.
+   - Semantic Scholar — <https://www.semanticscholar.org/product/api>
+   - OpenAlex — <https://openalex.org/rest-api>
+   - An OpenAI-compatible provider (the `apiKey` inside `LLM_PROVIDERS`) — that
+     provider's dashboard
+   - `ACCESS_TOKEN` and `INTERNAL_TOKEN` are registered nowhere: replacing the value in
+     `server/.env` and restarting *is* the rotation. Changing `ACCESS_TOKEN` signs out
+     every existing cookie, which is the only way to invalidate one.
+2. **Update `server/.env`** (git-ignored) and restart the server.
+3. **Check whether it reached the repository**, not just the working tree:
+   ```bash
+   bash scripts/secret-scan.sh                              # full history
+   git log -S '<first 8 characters of the key>' --oneline --all
+   ```
+   Then check what history does not cover: CI logs, issue and PR text, gists, pasted
+   transcripts, screenshots.
+4. **If it is in history**, the value is already public. Rewriting (`git filter-repo`,
+   BFG) helps only for keys nobody fetched, so treat it as a delay tactic rather than a
+   fix — and note that GitHub keeps unreachable objects reachable by SHA for a while, so
+   ask GitHub Support to purge them if it matters.
+5. **Say so in the release** when the key had any privilege: a read-only key on a shared
+   quota is a different incident from one that can spend money.
+
+Routine hygiene that costs nothing: keep development keys separate from deployment keys,
+give a public demo its own keys so a leak there cannot touch your account limits, and
+re-read `server/.env.example` after adding a provider to see what the new key can do.
+
 ## Scope
 
 **In scope** — issues in this project's own code:
