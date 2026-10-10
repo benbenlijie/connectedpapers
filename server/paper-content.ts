@@ -3,6 +3,7 @@ import { db as defaultDb } from './db'
 import { getArxiv } from './arxiv'
 import { pdfToText, sectionsFromPdfText, titleFromPdfText } from './pdf-text'
 import { config, type PaperContentMode } from './config'
+import { env } from './env'
 import { createLimiter, createRateLimiter } from './rateLimit'
 
 export interface PaperSection {
@@ -235,15 +236,17 @@ async function extractFromPdf(arxivId: string, fetchImpl: typeof fetch): Promise
  * withholding instance from re-asking arXiv on every reader page view. Small and
  * bounded on purpose: this is a cache, not a store.
  *
- * The ceiling comes from `ABSTRACT_MEMO_MAX` and is read per call, not captured
- * once at module load, so an operator changing the env var does not need a
- * restart and the eviction path stays testable.
+ * The ceiling comes from `ABSTRACT_MEMO_MAX`, read through `env` on each call
+ * rather than the frozen `config` object, so an operator changing the env var
+ * does not need a restart and the eviction path stays testable. `config` reads
+ * `Bun.env` once at module load, which is invisible to tests that set
+ * `process.env` afterwards.
  */
 const abstractMemo = new Map<string, PaperContent>()
 
 /** Number of abstracts this instance keeps; `0` disables the memo entirely. */
 export function abstractMemoMax(): number {
-  return Math.max(0, Math.floor(config.arxiv.abstractMemoMax))
+  return Math.max(0, Math.floor(Number(env.abstractMemoMax ?? 500)))
 }
 
 function memoizeAbstract(content: PaperContent): PaperContent {

@@ -13,4 +13,5 @@ export const env = {
   trustProxy: opt('TRUST_PROXY') === '1' || opt('TRUST_PROXY') === 'true',
   port: Number(opt('PORT') ?? 8787),
   hostname: opt('HOST') ?? '127.0.0.1',
+  abstractMemoMax: opt('ABSTRACT_MEMO_MAX'),
 }
