@@ -9,6 +9,7 @@ import {
   isArxivId,
   loadPaperContent,
   pdfUrl,
+  resetAbstractMemoForTests,
   saveContent,
 } from './paper-content'
 import { pdfFixtureResponse } from './test-fixtures'
@@ -210,4 +211,32 @@ test("'off' mode hides full text already on disk but still serves abstracts", ()
     db,
   )
   expect(getCachedContent('2401.00023', db, 'off')?.source).toBe('abstract')
+})
+
+test("'off' mode evicts the oldest abstract when the memo is full", async () => {
+  resetAbstractMemoForTests(2)
+  try {
+    const fetchImpl = (async () => {
+      throw new Error('content must not be fetched')
+    }) as unknown as typeof fetch
+    const asked: string[] = []
+    const fallbackFor = (id: string) => async () => {
+      asked.push(id)
+      return { title: id, abstract: `abs-${id}` }
+    }
+
+    await loadPaperContent('2401.00031', fetchImpl, db, fallbackFor('2401.00031'), 168, false, 'off')
+    await loadPaperContent('2401.00032', fetchImpl, db, fallbackFor('2401.00032'), 168, false, 'off')
+    await loadPaperContent('2401.00033', fetchImpl, db, fallbackFor('2401.00033'), 168, false, 'off')
+    expect(asked).toEqual(['2401.00031', '2401.00032', '2401.00033'])
+
+    asked.length = 0
+    // Oldest (…031) was evicted to make room for …033; …032 should still hit the memo.
+    await loadPaperContent('2401.00032', fetchImpl, db, fallbackFor('2401.00032'), 168, false, 'off')
+    expect(asked).toEqual([])
+    await loadPaperContent('2401.00031', fetchImpl, db, fallbackFor('2401.00031'), 168, false, 'off')
+    expect(asked).toEqual(['2401.00031'])
+  } finally {
+    resetAbstractMemoForTests()
+  }
 })

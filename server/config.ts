@@ -107,6 +107,12 @@ export const config = {
     /** Circuit breaker: stop fetching content after this many pages in an hour. */
     contentMaxPerHour: num(Bun.env.ARXIV_CONTENT_MAX_PER_HOUR, 60),
     contentMode: resolvePaperContentMode(Bun.env.PAPER_CONTENT_MODE, env.hostname),
+    /**
+     * How many CC0 abstracts to keep in memory when content mode is `off`.
+     * Bounded so a busy public instance cannot grow without limit; oldest entries
+     * are evicted first (Map insertion order).
+     */
+    abstractMemoMax: num(Bun.env.ABSTRACT_MEMO_MAX, 500),
   },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',

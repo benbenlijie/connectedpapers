@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ABSTRACT_MEMO_MAX`**: the in-memory CC0 abstract memo used when `PAPER_CONTENT_MODE=off` is configurable (default 500); oldest entries are evicted when the cap is hit.
+
 - **Resizable panels**: the home view's paper list, network graph, and details panel (plus
   the two graphs in comparison split view) and the reader's table of contents, article,
   and AI assistant panels can now be dragged to any width. Sizes are saved per layout in
