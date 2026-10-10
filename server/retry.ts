@@ -15,7 +15,11 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts): Promi
     } catch (e) {
       last = e
       if (attempt === retries || !retryOn(e)) throw e
-      await sleep(Math.max(baseDelayMs, baseDelayMs * 2 ** attempt))
+      // Jitter, because callers hitting the same upstream limit tend to retry in
+      // lockstep and keep colliding. It also keeps the sleep near the base delay
+      // rather than a clean multiple of it: 3 retries at a 1200 ms base meant
+      // 8.4 s of sleeping on an interactive request.
+      await sleep(baseDelayMs * 2 ** attempt + Math.random() * baseDelayMs)
     }
   }
   throw last

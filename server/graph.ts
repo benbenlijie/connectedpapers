@@ -1,4 +1,4 @@
-import { getPapersBatch, getRecommendations, getEmbeddingsBatch, type S2Paper } from './s2'
+import { getPapersBatch, getRecommendations, getCitingPaperList, getEmbeddingsBatch, type S2Paper } from './s2'
 import { getRelatedWorksForPaper } from './openalex'
 import { canonicalKeyFromS2, mergeDuplicates, normalizeDoi } from './identity'
 import { getEmbeddings, semanticNeighborEdges, upsertEmbedding } from './embeddings'
@@ -208,6 +208,18 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
     const refLimit = config.crawl.refLimit[Math.min(level, 3)]
     const citeLimit = config.crawl.citeLimit[Math.min(level, 3)]
 
+    // The citing side costs one capped request per paper now (see
+    // getCitingPaperList), so only the front of the frontier is worth asking
+    // about: those are the papers whose successors actually shape the graph.
+    const citingLists = new Map<string, Array<{ paperId: string; title?: string; year?: number; citationCount?: number }>>()
+    if (citeLimit > 0) {
+      await Promise.all(
+        frontier.slice(0, config.crawl.citeFetchLimit).map(async (p) => {
+          if (p?.paperId) citingLists.set(p.paperId, await getCitingPaperList(p.paperId, citeLimit))
+        }),
+      )
+    }
+
     for (const paper of frontier) {
       const refs = refsByNode.get(paper.paperId) ?? new Set<string>()
       for (const r of paper.references ?? []) refs.add(r.paperId)
@@ -222,7 +234,7 @@ export async function buildNetwork(root: S2Paper, opts: BuildOpts): Promise<Grap
         note(r.paperId, r.year, r.citationCount)
       }
       if (citeLimit > 0) {
-        for (const c of (paper.citations ?? []).slice(0, citeLimit)) {
+        for (const c of citingLists.get(paper.paperId) ?? []) {
           if (!edges.some((e) => e.from === c.paperId && e.to === paper.paperId)) {
             edges.push({ from: c.paperId, to: paper.paperId, type: 'citation', weight: 1 })
             ensurePaperStub(c.paperId)

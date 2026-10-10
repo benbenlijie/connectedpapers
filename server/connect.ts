@@ -2,10 +2,10 @@
  * "How are these two papers connected?" — the orchestration layer.
  *
  * Strategy, cheapest first:
- *   1. Fetch both papers in ONE Semantic Scholar batch call; that payload
- *      already embeds each paper's reference and citation lists, which is
- *      enough to spot direct citations, bibliographic coupling (both reference
- *      the same work) and co-citation (both are referenced by one work).
+ *   1. Fetch both papers in ONE Semantic Scholar batch call. That payload embeds
+ *      each paper's reference list, which is enough to spot direct citations,
+ *      bibliographic coupling (both reference the same work) and, with the
+ *      citing lists fetched separately and capped, co-citation.
  *   2. Merge in every relation already persisted locally (SQLite), which costs
  *      nothing and often already contains the answer for explored papers.
  *   3. Only if nothing was found, snowball outward from both endpoints with
@@ -20,7 +20,7 @@ import type { Database } from 'bun:sqlite'
 import { db as defaultDb } from './db'
 import { ApiError } from './errors'
 import { config } from './config'
-import { getPapersBatch, getEmbeddingsBatch, type S2Paper } from './s2'
+import { getPapersBatch, getCitingPaperList, getEmbeddingsBatch, type S2Paper } from './s2'
 import { toS2Input } from './resolve'
 import { graphNodeFromS2, type GraphEdge, type GraphNode } from './graph'
 import { cosineSimilarity, getEmbeddings, upsertEmbedding } from './embeddings'
@@ -177,6 +177,45 @@ export interface ConnectOptions {
 
 type PartialPaper = Partial<S2Paper> & { paperId: string }
 
+/**
+ * Whether the endpoint fetch failed in a way that tells us nothing about the
+ * paper. A 404 (or 400) is the upstream *answering* "not here" — which must stay
+ * a "not found" for the user. A 401/403/429/5xx or a network error means we could
+ * not ask properly, and only that is worth asking the user to retry.
+ */
+function isUpstreamAnswer(err: unknown): boolean {
+  const status = (err as { status?: number })?.status
+  return status === 404 || status === 400
+}
+
+/**
+ * Papers that cite `root`, read from the local edge set.
+ *
+ * `loadLocalEdges` turns a `citations` row (citing -> cited) into a `reference`
+ * edge pointing the same way, and a stored `citation` relation already points
+ * citer -> cited, so "cites root" is simply "ends at root" in both shapes.
+ */
+function localCiters(root: string, edges: readonly PathEdge[]): PartialPaper[] {
+  const seen = new Set<string>()
+  const out: PartialPaper[] = []
+  for (const e of edges) {
+    if (e.to !== root || e.from === root || seen.has(e.from)) continue
+    seen.add(e.from)
+    out.push({ paperId: e.from })
+  }
+  return out
+}
+
+/**
+ * Phase timings, off unless CONNECT_TRACE=1. Interactive latency here is a
+ * product feature, so the numbers have to be easy to pull out of a running
+ * server instead of guessed at.
+ */
+const TRACE = process.env.CONNECT_TRACE === '1'
+const trace = (label: string, t0: number): void => {
+  if (TRACE) console.log(`[connect] ${label}: ${Date.now() - t0}ms`)
+}
+
 export async function findConnection(
   fromId: string,
   toId: string,
@@ -194,21 +233,35 @@ export async function findConnection(
   const dbIn = opts.db ?? defaultDb
   const started = Date.now()
 
+  const tResolve = Date.now()
   const [fromPath, toPath] = await Promise.all([toS2Input(fromId), toS2Input(toId)])
+  trace('resolve', tResolve)
 
   // Fetching the endpoints is best-effort: local-first means a rate limit or an
   // outage degrades to cached knowledge instead of failing the whole request.
   let upstreamUnavailable = false
   let fetched: (S2Paper | null)[] = [null, null]
+  const tEndpoints = Date.now()
   try {
     fetched = await getPapersBatch([fromPath, toPath])
-  } catch {
-    upstreamUnavailable = true
+  } catch (e) {
+    upstreamUnavailable = !isUpstreamAnswer(e)
   }
+  trace('endpoint fetch', tEndpoints)
   const fromPaper = fetched[0] ?? getPaper(fromPath, dbIn) ?? getPaper(fromId, dbIn)
   const toPaper = fetched[1] ?? getPaper(toPath, dbIn) ?? getPaper(toId, dbIn)
-  if (!fromPaper?.paperId) throw new ApiError('PAPER_NOT_FOUND', '找不到起点论文', 404)
-  if (!toPaper?.paperId) throw new ApiError('PAPER_NOT_FOUND', '找不到终点论文', 404)
+  // A rate-limited upstream with nothing cached is not "no such paper": saying so
+  // sends the user hunting for a typo that is not there.
+  const missing = (side: string): ApiError =>
+    upstreamUnavailable && live
+      ? new ApiError(
+          'UPSTREAM_FAILED',
+          `上游 Semantic Scholar 暂时限流或超时，本地也没有${side}的缓存，请稍后重试`,
+          503,
+        )
+      : new ApiError('PAPER_NOT_FOUND', `找不到${side}`, 404)
+  if (!fromPaper?.paperId) throw missing('起点论文')
+  if (!toPaper?.paperId) throw missing('终点论文')
 
   const rootFrom = fromPaper.paperId
   const rootTo = toPaper.paperId
@@ -240,14 +293,25 @@ export async function findConnection(
   titles.set(rootTo, toPaper.title || rootTo)
 
   // ── 1. Local knowledge is free, so always start there. ────────────────────
+  const tLocal = Date.now()
   for (const e of loadLocalEdges(dbIn)) addEdge(e)
+  trace('local edges', tLocal)
 
   // Shared works are computed before absorption so the reference ordering can
-  // favour them; S2's embedded lists are the cheapest source of this signal.
+  // favour them.
   const fromRefs = (fromPaper.references ?? []) as { paperId: string; citationCount?: number }[]
   const toRefs = (toPaper.references ?? []) as { paperId: string; citationCount?: number }[]
-  const fromCites = (fromPaper.citations ?? []) as { paperId: string; citationCount?: number }[]
-  const toCites = (toPaper.citations ?? []) as { paperId: string; citationCount?: number }[]
+  // The citing side is a capped request of its own now, so a paper with 100k
+  // citations does not drag 1000 rows through every batch. Offline it is read
+  // from the local edges instead, which is what local-first means here.
+  const tCites = Date.now()
+  const [fromCites, toCites] = live
+    ? await Promise.all([getCitingPaperList(rootFrom, cfg.citeLimit), getCitingPaperList(rootTo, cfg.citeLimit)])
+    : [localCiters(rootFrom, edges), localCiters(rootTo, edges)]
+  // `absorb` reads `p.citations`; keep that one code path working.
+  fromPaper.citations = fromCites
+  toPaper.citations = toCites
+  trace('citing lists', tCites)
   const sharedRefIds = intersectIds(
     orderReferences(fromRefs, new Set(toRefs.map((r) => r.paperId)), fromRefs.length).map((r) => r.paperId),
     new Set(toRefs.map((r) => r.paperId)),
@@ -320,8 +384,18 @@ export async function findConnection(
       batches++
       liveUsed = true
       const next: PartialPaper[] = []
+      // Citing lists are one capped request per paper now, so only the front of
+      // the batch is worth it: those are the papers whose successors shape the
+      // graph. The rest contribute their references, which came along for free.
+      const citingLists = new Map<string, PartialPaper[]>()
+      await Promise.all(
+        fetchedBatch.slice(0, config.crawl.citeFetchLimit).map(async (p) => {
+          if (p?.paperId) citingLists.set(p.paperId, await getCitingPaperList(p.paperId, cfg.citeLimit))
+        }),
+      )
       for (const p of fetchedBatch) {
         if (!p?.paperId) continue
+        p.citations = citingLists.get(p.paperId) ?? []
         remember(p, 2)
         try {
           upsertPaper(p, dbIn)
@@ -337,7 +411,9 @@ export async function findConnection(
   }
 
   // ── 4. Similarity fallback when no structural route exists. ───────────────
+  const tVectors = Date.now()
   const vectors = await loadVectors([rootFrom, rootTo], dbIn)
+  trace('embeddings', tVectors)
   const vecFrom = vectors.get(rootFrom)
   const vecTo = vectors.get(rootTo)
   let semanticSimilarity: number | null = null
@@ -499,16 +575,21 @@ function findSemanticBridge(
 /** Best-effort write-back so a connection search enriches the local graph. */
 function persistLearned(edges: PathEdge[], nodes: Map<string, GraphNode>, dbIn: Database): void {
   try {
-    for (const node of nodes.values()) {
-      ensurePaperStub(node.id, dbIn)
-    }
-    for (const e of edges) {
-      if (e.type === 'reference') upsertCitation(e.from, e.to, dbIn)
-    }
-    persistRelations(
-      edges.map((e) => ({ from: e.from, to: e.to, type: e.type, weight: e.weight })),
-      dbIn,
-    )
+    // One transaction. Doing this statement by statement meant ~4500 auto-commits
+    // for a 3100-edge graph, and the fsyncs alone cost about 6 of the 8 seconds a
+    // connect request used to take.
+    dbIn.transaction(() => {
+      for (const node of nodes.values()) {
+        ensurePaperStub(node.id, dbIn)
+      }
+      for (const e of edges) {
+        if (e.type === 'reference') upsertCitation(e.from, e.to, dbIn)
+      }
+      persistRelations(
+        edges.map((e) => ({ from: e.from, to: e.to, type: e.type, weight: e.weight })),
+        dbIn,
+      )
+    })()
   } catch {
     // never let persistence break the response
   }

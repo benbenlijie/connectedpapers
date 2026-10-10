@@ -1,6 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import type { Database } from 'bun:sqlite'
 import { openDb } from './db'
+import { ApiError } from './errors'
 import {
   findConnection,
   loadLocalEdges,
@@ -45,6 +46,13 @@ function mockS2(world: World): () => void {
       }
       const payload = ids.map((id) => world.papers.get(id) ?? null)
       return new Response(JSON.stringify(payload), { status: 200 })
+    }
+    // Citing lists are a capped request of their own now.
+    if (url.includes('/citations')) {
+      const id = decodeURIComponent(url.split('/paper/')[1]?.split('/citations')[0] ?? '')
+      const limit = Number(new URL(url).searchParams.get('limit') ?? '0')
+      const cites = ((world.papers.get(id)?.citations ?? []) as unknown[]).slice(0, limit)
+      return new Response(JSON.stringify({ data: cites.map((c) => ({ citingPaper: c })) }), { status: 200 })
     }
     return new Response('{}', { status: 404 })
   }) as unknown as typeof fetch
@@ -165,6 +173,20 @@ describe('findConnection', () => {
     restore = mockS2(world)
     return findConnection(from, to, { db: database, ...opts })
   }
+
+  test('calls a rate-limited upstream unavailable rather than "paper not found"', async () => {
+    // 429 is what the shared S2 pool answers under load. The user should be told
+    // to retry, not sent hunting for a typo — and it has to come back quickly:
+    // the old 1200 ms retry base spent 8.4 s asleep before giving up.
+    restore = mockS2(world)
+    globalThis.fetch = (async () => new Response('{}', { status: 429 })) as unknown as typeof fetch
+    const started = Date.now()
+    const err = await findConnection(A, B, { db: database, live: true }).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).code).toBe('UPSTREAM_FAILED')
+    expect((err as ApiError).status).toBe(503)
+    expect(Date.now() - started).toBeLessThan(4000)
+  })
 
   test('detects a direct citation', async () => {
     world.papers.set(A, paper(A, { references: [paper(B)] }))

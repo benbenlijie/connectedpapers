@@ -33,6 +33,16 @@ export const config = {
     defaultDepth: num(Bun.env.CRAWL_DEPTH, 2),
     refLimit: [12, 8, 5, 3] as const,
     citeLimit: [10, 5, 2, 0] as const,
+    /**
+     * How many of a batch's papers get their citing list fetched separately.
+     *
+     * The citing side used to ride along in the batch response, which cost up to
+     * 1000 rows (~200 KB) per paper regardless of `citeLimit`. Fetching it per
+     * paper instead is cheap per call but is one call per paper, so cap how many
+     * papers per level are worth it: the highest-ranked ones, which are the ones
+     * whose successors shape the graph.
+     */
+    citeFetchLimit: num(Bun.env.CRAWL_CITE_FETCH_LIMIT, 20),
   },
   cache: {
     networkTtlHours: num(Bun.env.NETWORK_TTL_HOURS, 24),
