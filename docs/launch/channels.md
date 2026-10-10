@@ -224,6 +224,8 @@ Source: https://lobste.rs/about
 
 Authoritative sources: 《知乎机构号使用规范（试行）》 https://www.zhihu.com/term/institution-usage · 《知乎协议》 https://www.zhihu.com/term/zhihu-terms · 《知乎视频用户协议》 https://www.zhihu.com/term/video
 
+- **AI content must be declared here — the opposite of Hacker News.** HN bans LLM text outright; 知乎 allows it through the platform's own label. 《人工智能生成合成内容标识办法》 (in force 2025-09-01) Art. 10 requires the poster to declare and use the platform's labelling function (https://www.gov.cn/zhengce/zhengceku/202503/content_7014286.htm), and 知乎's editor offers 「包含 AI 辅助创作」 under 创作声明. The penalty for skipping it, per a gov.cn policy interpretation quoting the platform: 「如果不主动添加，被平台检测到使用 AI 创作，则会被打上标识、**排序置后**或者『折叠』乃至删除封号」 (https://www.gov.cn/zhengce/202503/content_7014404.htm). **排序置后 is the one that matters** — you are publishing for reach, so being deprioritised is the same as not publishing. Write it yourself, or use AI and tick the box.
+- Detection is currently weak — 南都 measured that 知乎 did not flag undeclared AI content within 24 hours (https://view.inews.qq.com/a/20250917A03AOU00) — but the rule and its penalty are on the record, so do not count on it.
 - 《知乎社区规范》's own canonical page could not be fetched (**UNVERIFIED**), but the linked regulations are explicit about 恶意营销:
   - "多次发布包含联系方式、推广链接等导流信息的低质内容"
   - "相同的回答多次重复发布在不同的问题下"
@@ -235,6 +237,10 @@ Authoritative sources: 《知乎机构号使用规范（试行）》 https://www
 - Named-account branding: names must not contain slogans or absolute language ("最高级/最佳/第一"), so don't name an account "CiteDuo官方" with a tagline. — https://zhstatic.zhihu.com/org/org-account-guide-2018.10.pdf
 
 **Format that works:** a **long-form answer or 文章** that *answers a real question* ("怎么判断两篇论文之间是否真的有关联？"), with the tool appearing once, naturally, near the end, and **no contact info, no QR code, no "私信我/加群/点链接注册" CTA**. The platform treats a link as high-risk when it functions as 导流/注册/转化, and low-risk when it is a reference. Ship the knowledge, not the funnel.
+
+**Operational plan, self-write outline and pre-publish checklist:** [`zhihu.md`](zhihu.md). A drafted version written to the `zhihu-writer` skill's `writer-v1.20` is in [`zhihu-draft.md`](zhihu-draft.md) — it is LLM-written, so posting it means ticking 「包含 AI 辅助创作」 and accepting the ranking penalty. The outline in `zhihu.md` exists so you can get the same piece without that cost.
+
+**A real question to answer:** 「如何高效完成论文的文献综述，有哪些实用的方法或工具？」 https://www.zhihu.com/question/2043286521067861045 — verify it is still open and not already saturated before writing.
 
 ### 4.3 小红书 — ⚠️ allowed for genuine sharing, but 导流 is the red line
 
