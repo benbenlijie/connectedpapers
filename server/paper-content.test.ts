@@ -240,3 +240,24 @@ test("'off' mode evicts the oldest abstract when the memo is full", async () => 
     resetAbstractMemoForTests()
   }
 })
+
+test("'off' mode with ABSTRACT_MEMO_MAX=0 does not store abstracts", async () => {
+  resetAbstractMemoForTests(0)
+  try {
+    const fetchImpl = (async () => {
+      throw new Error('content must not be fetched')
+    }) as unknown as typeof fetch
+    const asked: string[] = []
+    const fallbackFor = (id: string) => async () => {
+      asked.push(id)
+      return { title: id, abstract: `abs-${id}` }
+    }
+
+    await loadPaperContent('2401.00041', fetchImpl, db, fallbackFor('2401.00041'), 168, false, 'off')
+    await loadPaperContent('2401.00041', fetchImpl, db, fallbackFor('2401.00041'), 168, false, 'off')
+    // Cap 0 means the memo is off: both loads hit the fallback.
+    expect(asked).toEqual(['2401.00041', '2401.00041'])
+  } finally {
+    resetAbstractMemoForTests()
+  }
+})

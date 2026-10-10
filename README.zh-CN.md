@@ -162,7 +162,7 @@ citeduo/
 | `ARXIV_API_MIN_INTERVAL_MS` | `3000` | arXiv API 条款要求每 3 秒最多一个请求。 |
 | `ARXIV_CONTENT_MIN_INTERVAL_MS` | `1000` | 抓取 arXiv 论文页的最小间隔；按 `robots.txt` 字面执行可设为 `15000`。 |
 | `ARXIV_CONTENT_MAX_PER_HOUR` | `60` | 论文页抓取的每小时熔断上限。 |
-| `ABSTRACT_MEMO_MAX` | `500` | `PAPER_CONTENT_MODE=off` 时内存中保留的 CC0 摘要条数上限；超出后淘汰最旧的一条。 |
+| `ABSTRACT_MEMO_MAX` | `500` | `PAPER_CONTENT_MODE=off` 时内存中保留的 CC0 摘要条数上限；超出后淘汰最旧的一条。`0` 关闭该缓存；非数字回退为 500。 |
 
 完整清单（含爬取、翻译等开关）见 [`server/.env.example`](server/.env.example)。
 
