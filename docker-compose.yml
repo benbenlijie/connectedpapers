@@ -1,0 +1,32 @@
+# CiteDuo, self-hosted: one Bun process, one SQLite file, no account, no cloud.
+#
+#   docker compose up --build        → http://127.0.0.1:8787
+#
+# The database lives in the named volume, so `docker compose down` keeps your
+# graphs, notes and reading state.
+services:
+  citeduo:
+    build: .
+    image: citeduo:local
+    ports:
+      - "8787:8787"
+    environment:
+      # This instance is yours alone, so keeping paper text for your own reading
+      # is within arXiv's terms. Set this to `off` before you let anyone else
+      # reach the port — see the note in the Dockerfile.
+      PAPER_CONTENT_MODE: full
+      # Uncomment to require a token on every request (public hosts):
+      # ACCESS_TOKEN: change-me
+      # Optional: your own upstream keys, so you are not on the shared limit.
+      # SEMANTIC_SCHOLAR_API_KEY: ""
+      # OPENALEX_API_KEY: ""
+      # CONTACT_EMAIL: you@example.com
+      # Translation without a key: the browser provider runs in the visitor's
+      # browser. Add an OpenAI-compatible provider for server-side translation.
+      # LLM_PROVIDERS: '[{"name":"local","kind":"openai","baseUrl":"https://example.com/v1","apiKey":"sk-...","model":"..."},{"name":"browser","kind":"browser"}]'
+    volumes:
+      - citeduo-data:/data
+    restart: unless-stopped
+
+volumes:
+  citeduo-data:

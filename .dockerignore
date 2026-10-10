@@ -1,0 +1,14 @@
+.git
+.github
+.omo
+.tmp
+node_modules
+academic-paper-explorer/node_modules
+academic-paper-explorer/dist
+data
+docs
+sub_tasks
+user_input_files
+server/.env
+scripts/deploy.env
+*.md
