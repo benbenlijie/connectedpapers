@@ -1,6 +1,11 @@
 import { env } from './env'
 
-const num = (v: string | undefined, d: number) => (v ? Number(v) : d)
+/** Parse an env number; missing/blank/non-finite values fall back to ``d``. */
+export const num = (v: string | undefined, d: number): number => {
+  if (!v) return d
+  const n = Number(v)
+  return Number.isFinite(n) ? n : d
+}
 
 /** Hostnames only the operator of this instance can reach. */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0:0:0:0:0:0:0:1'])
@@ -107,6 +112,13 @@ export const config = {
     /** Circuit breaker: stop fetching content after this many pages in an hour. */
     contentMaxPerHour: num(Bun.env.ARXIV_CONTENT_MAX_PER_HOUR, 60),
     contentMode: resolvePaperContentMode(Bun.env.PAPER_CONTENT_MODE, env.hostname),
+    /**
+     * How many CC0 abstracts to keep in memory when content mode is `off`.
+     * Bounded so a busy public instance cannot grow without limit; oldest entries
+     * are evicted first (Map insertion order). `0` (or negative) disables the memo.
+     * Non-finite env values fall back to 500 via ``num``.
+     */
+    abstractMemoMax: num(Bun.env.ABSTRACT_MEMO_MAX, 500),
   },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',

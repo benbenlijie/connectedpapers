@@ -162,6 +162,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the long version.
 | `ARXIV_API_MIN_INTERVAL_MS` | `3000` | arXiv's API terms ask for at most one request every three seconds. |
 | `ARXIV_CONTENT_MIN_INTERVAL_MS` | `1000` | Floor between arXiv paper-page fetches. Raise to `15000` for a literal reading of `robots.txt`. |
 | `ARXIV_CONTENT_MAX_PER_HOUR` | `60` | Circuit breaker on paper-page fetches per hour. |
+| `ABSTRACT_MEMO_MAX` | `500` | Cap on in-memory CC0 abstracts when `PAPER_CONTENT_MODE=off`; oldest entries are evicted first. `0` disables the memo. Non-numeric values fall back to 500. |
 
 The complete list, including the crawl and translation knobs, is in [`server/.env.example`](server/.env.example).
 
