@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Upstream politeness floors**: `bun run check:politeness` (and the CI server job) asserts that the default spacing in `server/config.ts` stays at or above each upstream's published floor (arXiv API 3 s, arXiv content 1 s project policy, S2 anonymous/keyed, OpenAlex), with source URLs in the script.
+
 - **`ABSTRACT_MEMO_MAX`**: the in-memory CC0 abstract memo used when `PAPER_CONTENT_MODE=off` is configurable (default 500); oldest entries are evicted when the cap is hit. `0` disables the memo; a non-numeric value falls back to 500.
 
 - **Resizable panels**: the home view's paper list, network graph, and details panel (plus
