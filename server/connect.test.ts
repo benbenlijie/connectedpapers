@@ -303,18 +303,26 @@ describe('findConnection', () => {
     expect(result.best!.summary).toContain('存在文献耦合')
   })
 
-  test('snowballs outward when the endpoints share nothing directly', async () => {
-    world.papers.set(A, paper(A, { references: [paper(M, { citationCount: 500 })] }))
-    world.papers.set(B, paper(B, { references: [paper('N')] }))
-    world.papers.set(M, paper(M, { references: [paper(B)] }))
-    world.papers.set('N', paper('N'))
+  test(
+    'snowballs outward when the endpoints share nothing directly',
+    async () => {
+      world.papers.set(A, paper(A, { references: [paper(M, { citationCount: 500 })] }))
+      world.papers.set(B, paper(B, { references: [paper('N')] }))
+      world.papers.set(M, paper(M, { references: [paper(B)] }))
+      world.papers.set('N', paper('N'))
 
-    const result = await run()
-    expect(result.found).toBe(true)
-    expect(result.best!.nodeIds).toEqual([A, M, B])
-    expect(result.stats.source).toBe('live')
-    expect(world.calls.length).toBeGreaterThan(1)
-  })
+      const result = await run()
+      expect(result.found).toBe(true)
+      expect(result.best!.nodeIds).toEqual([A, M, B])
+      expect(result.stats.source).toBe('live')
+      expect(world.calls.length).toBeGreaterThan(1)
+    },
+    // This is the one test that deliberately walks several upstream rounds, and
+    // the spacing between those calls is a real setting: `bun run test:server`
+    // zeroes it, but a bare `bun test server/` would otherwise hit the default
+    // 5 s limit and look like a product bug.
+    30_000,
+  )
 
   test('stays offline when live is disabled', async () => {
     world.papers.set(A, paper(A, { references: [paper(M)] }))

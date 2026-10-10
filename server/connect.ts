@@ -188,6 +188,9 @@ function isUpstreamAnswer(err: unknown): boolean {
   return status === 404 || status === 400
 }
 
+/** How many papers per snowball expansion get their citing list fetched. */
+const CITE_FETCH_PER_EXPANSION = 8
+
 /**
  * Papers that cite `root`, read from the local edge set.
  *
@@ -387,9 +390,12 @@ export async function findConnection(
       // Citing lists are one capped request per paper now, so only the front of
       // the batch is worth it: those are the papers whose successors shape the
       // graph. The rest contribute their references, which came along for free.
+      // The snowball runs while a user waits, and each of these calls costs the
+      // upstream spacing interval on the wire (1 s without a key), so this cap is
+      // deliberately smaller than the crawl's.
       const citingLists = new Map<string, PartialPaper[]>()
       await Promise.all(
-        fetchedBatch.slice(0, config.crawl.citeFetchLimit).map(async (p) => {
+        fetchedBatch.slice(0, CITE_FETCH_PER_EXPANSION).map(async (p) => {
           if (p?.paperId) citingLists.set(p.paperId, await getCitingPaperList(p.paperId, cfg.citeLimit))
         }),
       )
