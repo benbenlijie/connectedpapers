@@ -16,7 +16,7 @@ export interface CachedNetwork {
 
 export type NetworkCache = Record<string, CachedNetwork>
 
-export const NETWORK_CACHE_STORAGE_KEY = 'connectedpapers.networkCache.v1'
+export const NETWORK_CACHE_STORAGE_KEY = 'citeduo.networkCache.v1'
 export const NETWORK_CACHE_LIMIT = 8
 export const NETWORK_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 /** Bump when the graph algorithm changes so stale entries are ignored. */

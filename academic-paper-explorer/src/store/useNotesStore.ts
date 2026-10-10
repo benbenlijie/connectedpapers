@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { parseNotes, serializeNotes, withNote, type Notes } from '../lib/notes'
 
-export const NOTES_STORAGE_KEY = 'connectedpapers.notes.v1'
+export const NOTES_STORAGE_KEY = 'citeduo.notes.v1'
 
 function loadNotes(): Notes {
   try {

@@ -8,9 +8,9 @@
  *   semantic              symmetric SPECTER2 kNN similarity
  *
  * Traversal is intentionally direction-agnostic: being cited by a paper still
- * connects you to its lineage, and Connected Papers lays the graph out
- * undirected anyway. Every hop nevertheless records whether it ran with or
- * against the stored direction, so the UI can say "A 引用了 X" honestly.
+ * connects you to its lineage, and the graph is laid out undirected anyway.
+ * Every hop nevertheless records whether it ran with or against the stored
+ * direction, so the UI can say "A 引用了 X" honestly.
  */
 
 export type PathEdgeType = 'reference' | 'citation' | 'related' | 'coupling' | 'semantic'
@@ -226,8 +226,9 @@ export function pathNodeIds(start: string, steps: readonly PathStep[]): string[]
 }
 
 /**
- * Two papers that both reference `middle` (bibliographic coupling) — the signal
- * Connected Papers is built around. Walkable as start -> middle <- goal.
+ * Two papers that both reference `middle` (bibliographic coupling) — a strong
+ * structural signal that two works sit in the same research context.
+ * Walkable as start -> middle <- goal.
  */
 export function couplingSteps(start: string, goal: string, middle: string, weight = 1): PathStep[] {
   return [

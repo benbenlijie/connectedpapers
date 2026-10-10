@@ -8,7 +8,7 @@ import {
   type HighlightMap,
 } from '../lib/highlights'
 
-export const HIGHLIGHTS_STORAGE_KEY = 'connectedpapers.highlights.v1'
+export const HIGHLIGHTS_STORAGE_KEY = 'citeduo.highlights.v1'
 
 function load(): HighlightMap {
   try {

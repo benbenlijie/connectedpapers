@@ -8,7 +8,7 @@ import {
   type ReadingStatus,
 } from '../lib/reading'
 
-export const READING_STORAGE_KEY = 'connectedpapers.reading.v1'
+export const READING_STORAGE_KEY = 'citeduo.reading.v1'
 
 function load(): ReadingMap {
   try {

@@ -7,7 +7,7 @@ import {
   type ChatState,
 } from '../lib/aiChat'
 
-export const AI_CHAT_STORAGE_KEY = 'connectedpapers.aiChat.sessions.v1'
+export const AI_CHAT_STORAGE_KEY = 'citeduo.aiChat.sessions.v1'
 
 interface AiChatStore {
   sessions: Record<string, string>

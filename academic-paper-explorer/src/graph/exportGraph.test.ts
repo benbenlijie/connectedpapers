@@ -17,8 +17,8 @@ describe('sanitizeFilename', () => {
   })
 
   it('falls back when nothing usable remains', () => {
-    expect(sanitizeFilename('   ')).toBe('connectedpapers')
-    expect(sanitizeFilename('///')).toBe('connectedpapers')
+    expect(sanitizeFilename('   ')).toBe('citeduo')
+    expect(sanitizeFilename('///')).toBe('citeduo')
   })
 
   it('caps the length', () => {
@@ -34,7 +34,7 @@ describe('exportFilename', () => {
 
   it('falls back to a default slug', () => {
     expect(exportFilename('', 'png', new Date('2026-09-29T10:00:00Z')))
-      .toBe('connectedpapers-20260929.png')
+      .toBe('citeduo-20260929.png')
   })
 })
 

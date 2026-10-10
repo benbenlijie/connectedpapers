@@ -12,7 +12,7 @@ body:
 
         **Do not paste real secrets.** Redact `ACCESS_TOKEN`,
         `SEMANTIC_SCHOLAR_API_KEY`, `OPENALEX_API_KEY`, `INTERNAL_TOKEN`, and any
-        `LLM_PROVIDERS` credentials. See [SECURITY.md](https://github.com/benbenlijie/connectedpapers/blob/main/SECURITY.md).
+        `LLM_PROVIDERS` credentials. See [SECURITY.md](https://github.com/benbenlijie/citeduo/blob/main/SECURITY.md).
 
   - type: textarea
     id: what-happened

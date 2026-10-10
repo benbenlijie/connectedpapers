@@ -4,7 +4,7 @@
 #
 # 追加白名单前请确认该条目确实不是凭据：白名单是永久豁免，
 # 一旦把真实密钥写进来，扫描器就再也不会提醒你。
-title = "connectedpapers"
+title = "citeduo"
 
 [extend]
 useDefault = true

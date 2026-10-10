@@ -21,8 +21,8 @@ export interface ExportPayload {
   edges: NetworkEdge[]
 }
 
-const GENERATOR = 'connectedpapers'
-const FALLBACK_SLUG = 'connectedpapers'
+const GENERATOR = 'citeduo'
+const FALLBACK_SLUG = 'citeduo'
 const MAX_SLUG_LENGTH = 80
 
 export function sanitizeFilename(input: string): string {

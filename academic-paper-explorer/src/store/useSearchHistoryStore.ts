@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { addToHistory, parseHistory, removeFromHistory, serializeHistory } from '../lib/searchHistory'
 
-export const SEARCH_HISTORY_STORAGE_KEY = 'connectedpapers.searchHistory.v1'
+export const SEARCH_HISTORY_STORAGE_KEY = 'citeduo.searchHistory.v1'
 
 function load(): string[] {
   try {

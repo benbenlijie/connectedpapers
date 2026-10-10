@@ -5,7 +5,7 @@
 ## 快速开始
 
 ```bash
-git clone <repo> && cd connectedpapers
+git clone <repo> && cd citeduo
 bash scripts/setup.sh          # 装依赖、建 data/、复制 server/.env
 bun run build:web && bun run server
 ```

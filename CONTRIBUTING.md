@@ -1,4 +1,4 @@
-# Contributing to Academic Paper Explorer
+# Contributing to CiteDuo
 
 Thanks for taking the time to contribute. This is a small, self-hosted tool, so the
 process is deliberately lightweight: open an issue or a focused pull request, make
@@ -9,7 +9,7 @@ For security problems, please **do not** open a public issue — see [SECURITY.m
 
 ## What the project is
 
-Academic Paper Explorer is a local, single-user academic paper search and citation-network
+CiteDuo is a local, single-user academic paper search and citation-network
 explorer. A Bun single-process backend (`server/`, `bun:sqlite`, database at `data/app.db`)
 serves a React 18 / Vite 6 / TypeScript / TailwindCSS frontend
 (`academic-paper-explorer/`). Paper metadata comes from Semantic Scholar and OpenAlex.
@@ -32,8 +32,8 @@ so a current Node LTS is sufficient locally.
 ### First-time setup
 
 ```bash
-git clone https://github.com/benbenlijie/connectedpapers.git
-cd connectedpapers
+git clone https://github.com/benbenlijie/citeduo.git
+cd citeduo
 bash scripts/setup.sh
 ```
 
@@ -127,7 +127,7 @@ change is a breaking change, note it in the footer.
 
 ## Reporting bugs
 
-Use the [bug report form](https://github.com/benbenlijie/connectedpapers/issues/new/choose).
+Use the [bug report form](https://github.com/benbenlijie/citeduo/issues/new/choose).
 A good report lets someone reproduce the problem without guessing. Please include:
 
 - **What happened** and **what you expected** instead.
@@ -147,7 +147,7 @@ If you have already exposed a key, rotate it — see [SECURITY.md](SECURITY.md).
 
 ## Feature requests
 
-Use the [feature request form](https://github.com/benbenlijie/connectedpapers/issues/new/choose)
+Use the [feature request form](https://github.com/benbenlijie/citeduo/issues/new/choose)
 and describe the problem you are trying to solve and the behaviour you would like,
 rather than only the implementation. Note that this is an intentionally local-first,
 single-user tool, so features that require a multi-user backend or a hosted service

@@ -107,5 +107,5 @@ below describe capabilities rather than a diff against a previous tag.
   skipped, so the documented three-command quick start no longer produces a server that
   fails on PDF text extraction.
 
-[Unreleased]: https://github.com/benbenlijie/connectedpapers/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/benbenlijie/connectedpapers/releases/tag/v0.1.0
+[Unreleased]: https://github.com/benbenlijie/citeduo/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/benbenlijie/citeduo/releases/tag/v0.1.0

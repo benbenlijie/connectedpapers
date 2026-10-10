@@ -34,16 +34,16 @@ const HomePage: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold text-blue-400">
-              学术论文关联网络分析平台
+              CiteDuo
             </h1>
             <div className="text-sm text-gray-400">
-              Academic Paper Network Explorer
+              学术论文关联网络分析平台
             </div>
           </div>
           <div className="flex items-center space-x-4">
             <ConnectionCapsule />
             <div className="text-sm text-gray-400">
-              类似Connected Papers的交互式学术探索工具
+              查清两篇论文到底是怎么连上的
             </div>
           </div>
         </div>

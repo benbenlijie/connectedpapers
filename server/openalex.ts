@@ -14,7 +14,7 @@ function oaFetch(url: string, init?: RequestInit): Promise<Response> {
   return limiter(() => fetch(keyed(url), init))
 }
 
-const ua = () => `Academic-Paper-Explorer/1.0 (mailto:${config.s2.contactEmail})`
+const ua = () => `CiteDuo/0.1.0 (+https://github.com/benbenlijie/citeduo) (mailto:${config.s2.contactEmail})`
 // OpenAlex “polite pool”：带上 mailto 可获更高、更稳定的限速。
 const mailto = () => encodeURIComponent(config.s2.contactEmail)
 

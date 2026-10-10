@@ -8,7 +8,7 @@ paste real secrets into an issue, a pull request, or a discussion.
 Use GitHub's private vulnerability reporting instead:
 
 1. Go to **Security → Advisories → Report a vulnerability** on
-   <https://github.com/benbenlijie/connectedpapers/security/advisories/new>.
+   <https://github.com/benbenlijie/citeduo/security/advisories/new>.
 2. Describe the issue with enough detail to reproduce it.
 
 This opens a private advisory visible only to the maintainers. If private reporting is

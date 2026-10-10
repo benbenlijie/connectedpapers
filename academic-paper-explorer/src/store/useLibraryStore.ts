@@ -13,7 +13,7 @@ import {
   type Library,
 } from '../lib/library'
 
-export const LIBRARY_STORAGE_KEY = 'connectedpapers.library.v1'
+export const LIBRARY_STORAGE_KEY = 'citeduo.library.v1'
 
 function load(): Library {
   try {
