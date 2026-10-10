@@ -1,8 +1,8 @@
-# Academic Paper Explorer · 学术论文关系网络探索器
+# CiteDuo · 学术论文关系网络探索器
 
 **搜索论文、展开引用网络，并查清任意两篇论文之间到底是怎么连上的。**
 
-[![CI](https://github.com/benbenlijie/connectedpapers/actions/workflows/ci.yml/badge.svg)](https://github.com/benbenlijie/connectedpapers/actions/workflows/ci.yml)
+[![CI](https://github.com/benbenlijie/citeduo/actions/workflows/ci.yml/badge.svg)](https://github.com/benbenlijie/citeduo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Bun-1.3%2B-black?logo=bun)](https://bun.sh)
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react)](https://react.dev)
@@ -17,11 +17,11 @@
 
 ## 为什么还要再造一个论文探索器？
 
-Connected Papers 这类工具展示的是**单篇**论文的邻域，回答的是"这篇论文周围有什么"；但当你手上已经有两篇论文时，真正想问的是另一个问题：**"这两篇到底什么关系？"**
+大多数引文图谱工具展示的是**单篇**论文的邻域，回答的是"这篇论文周围有什么"；但当你手上已经有两篇论文时，真正想问的是另一个问题：**"这两篇到底什么关系？"**
 
 这个项目围绕第二个问题构建，并且强调数据归你自己。
 
-| | Connected Papers 等 | Academic Paper Explorer |
+| | 常见的引文图谱工具 | CiteDuo |
 | --- | --- | --- |
 | 邻域网络图 | ✅ | ✅ |
 | "这两篇是怎么连上的？" | ❌ | ✅ 给出逐跳解释的路径，并列出备选 |
@@ -85,8 +85,8 @@ Connected Papers 这类工具展示的是**单篇**论文的邻域，回答的�
 需要 **[Bun](https://bun.sh) ≥ 1.3** 与 **pnpm 9**。
 
 ```bash
-git clone https://github.com/benbenlijie/connectedpapers.git
-cd connectedpapers
+git clone https://github.com/benbenlijie/citeduo.git
+cd citeduo
 bash scripts/setup.sh      # 装两套依赖、创建 data/、从样例复制 server/.env
 bun run build:web          # 构建前端
 bun run server             # http://127.0.0.1:8787
@@ -117,7 +117,7 @@ flowchart LR
 全部内容都在一个进程里：Bun 服务同时托管构建好的前端、JSON API 与 SQLite 数据库。上游响应会被持久化，所以图、关系边和论文正文会越用越快；只走本地关系时，关联分析完全不需要联网。
 
 ```
-connectedpapers/
+citeduo/
 ├── academic-paper-explorer/   # React 前端（src/、components/、graph/、store/）
 ├── server/                    # Bun 后端：路由、上游客户端、SQLite、图搜索
 │   ├── pathfind.ts            # 纯路径搜索 + 排序 + 解释
@@ -146,6 +146,15 @@ connectedpapers/
 | `CONNECT_MAX_EXPANSIONS` | `6` | 单次关联分析允许的实时 S2 批量抓取次数。 |
 | `CONNECT_MAX_MS` | `25000` | 单次关联分析的墙钟预算。 |
 | `CONNECT_LOCAL_ONLY` | 关闭 | `1` = 只用已存关系作答，不联网。 |
+| `CRAWL_CITE_FETCH_LIMIT` | `20` | 每轮爬取为多少篇论文单独补充引用侧。 |
+| `PAPER_CONTENT_MODE` | `auto` | `full` / `off` / `auto`；`auto` 表示仅回环实例提供全文，其他情况只给摘要与 arXiv 链接。 |
+| `ARXIV_API_MIN_INTERVAL_MS` | `3000` | arXiv API 条款要求每 3 秒最多一个请求。 |
+| `ARXIV_CONTENT_MIN_INTERVAL_MS` | `1000` | 抓取 arXiv 论文页的最小间隔；按 `robots.txt` 字面执行可设为 `15000`。 |
+| `ARXIV_CONTENT_MAX_PER_HOUR` | `60` | 论文页抓取的每小时熔断上限。 |
+
+完整清单（含爬取、翻译等开关）见 [`server/.env.example`](server/.env.example)。
+
+**阅读器与 arXiv 使用条款** —— 应用内阅读器可以显示论文全文，但 arXiv 条款只允许「为你个人使用或研究目的」存储和提供 e-print 内容（[tou.html](https://info.arxiv.org/help/api/tou.html)）。因此 `PAPER_CONTENT_MODE` 默认是 `auto`：仅回环实例解析为 `full`，其他情况解析为 `off`。`off` 时阅读器返回摘要、元数据与原文 arXiv 链接，并且不向磁盘写入任何缓存。公开 demo 应保持 `off`；后续可以按论文检测许可，对开放许可的论文单独提供全文。
 
 **LLM / 翻译 provider**——按顺序降级；`kind: "browser"` 不需要 key，完全在访客浏览器里执行：
 
@@ -186,8 +195,8 @@ INTERNAL_TOKEN=               # 内部检索接口的共享口令；缺省时每
 ## 开发
 
 ```bash
-bun run test:server                        # 后端（214 项）
-pnpm --dir academic-paper-explorer test    # 前端（408 项）
+bun run test:server                        # 后端（220 项）
+pnpm --dir academic-paper-explorer test    # 前端（412 项）
 bun run typecheck:server
 pnpm --dir academic-paper-explorer typecheck
 pnpm --dir academic-paper-explorer lint
@@ -208,13 +217,17 @@ CI 在每次 push 与 PR 上跑的就是这些。提交信息约定与开发流�
 - [ ] 对本地缓存的论文正文做全文检索。
 - [ ] Postgres 后端，支持多用户部署。
 
-想法与 bug 都欢迎提 [issue](https://github.com/benbenlijie/connectedpapers/issues)。
+想法与 bug 都欢迎提 [issue](https://github.com/benbenlijie/citeduo/issues)。
 
 ## 故障排除
 
 - **端口被占用**：`PORT=9000 bun run server` 换端口。
 - **页面返回一段提示 JSON**：前端还没构建，先运行 `bun run build:web`。
 - **搜索或网络图加载失败 / 较慢**：未配置 `SEMANTIC_SCHOLAR_API_KEY` 时受共享限流，填入 key 或稍后重试。
+
+## 相关工作
+
+这个领域已经有不少好工具，本项目不是要取代它们。[Connected Papers](https://www.connectedpapers.com/)、[Litmaps](https://www.litmaps.com/)、[ResearchRabbit](https://www.researchrabbit.ai/)、[Inciteful](https://inciteful.xyz/) 在引文邻域探索上都做得相当成熟。CiteDuo 有意在三件事上不同：它回答的是**一对**论文之间的关系（给出排序后的、逐跳可解释的路径），而不只是画出一片邻域；它完全跑在你自己的机器上，而不是需要注册的线上服务；它的 AI 助手必须先检索到论文正文才会作答。
 
 ## 贡献
 

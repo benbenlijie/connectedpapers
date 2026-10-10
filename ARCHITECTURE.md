@@ -8,7 +8,8 @@ crawls references/citations breadth-first, and renders an interactive graph.
 
 Hard constraints that shape every decision below:
 
-- **Single user, local only.** No authentication, no multi-tenancy, no user table.
+- **Single user, local only.** No multi-tenancy and no user table; the only access
+  control is an optional shared token (`ACCESS_TOKEN`, off by default — see §29).
 - **Bound to loopback.** `server/main.ts` serves on `127.0.0.1:8787` by default
   (`server/env.ts`: `HOST` / `PORT`, default `127.0.0.1` / `8787`).
 - **One process, one SQLite file.** `server/db.ts` opens `data/app.db` via
@@ -131,6 +132,7 @@ Hard constraints that shape every decision below:
 | `lib/aiChat.ts` | Shared `AiClientEvent` types + chat reducer (append deltas, tool activity, error, done). |
 | `store/useAiChatStore.ts` | Zustand store holding per-paper chat transcripts, streaming state and abort control. |
 | `components/AiAssistantPanel.tsx` | Reader "AI 助手" chat UI: message list, input, streaming bubble, tool chips, error/retry, stop. |
+| `components/ui/resizable.tsx` | `react-resizable-panels` wrappers (group/panel/handle); draggable, keyboard-operable panel widths, persisted per layout. |
 | `graph/urlState.ts` | Pure encode/decode of the view state to/from a query string. |
 | `graph/ForceGraph3DLazy.tsx` | Lazily-imported three.js renderer wrapper (not in the initial bundle). |
 | `components/graph/*` | Toolbar (2D/3D, encoding, search), legend, timeline, tooltip, minimap, node context menu. |
@@ -240,7 +242,7 @@ returns a blank image.
 ### 8. Local paper notes
 
 `lib/notes.ts` holds the pure note-map operations; `store/useNotesStore.ts` wraps
-them over `localStorage['connectedpapers.notes.v1']` (lenient parse, guarded
+them over `localStorage['citeduo.notes.v1']` (lenient parse, guarded
 writes). `DetailsPanel` edits the note for
 `selectedNodeId || resolveClientId(selectedPaper)` on every keystroke and shows a
 saved hint; `NetworkGraph` derives `annotatedIds` from the store and marks those
@@ -408,7 +410,7 @@ own text **on demand** instead of answering from the model's memory.
 
 `lib/reading.ts` is a pure status map (`to_read`/`reading`/`done` + a clamped
 progress percent); `store/useReadingStore.ts` persists it to
-`localStorage['connectedpapers.reading.v1']`, consistent with notes. Entries are
+`localStorage['citeduo.reading.v1']`, consistent with notes. Entries are
 keyed by paper id; the reader only knows the arXiv id, so the details-panel link
 carries `?pid=<paperId>` and the reader keys on `pid ?? arxivId`. `PaperList`
 shows a per-row status select + badge and a "仅看阅读清单" filter; `ReaderPage`
@@ -423,7 +425,7 @@ A highlight anchors to `{ blockIndex, start, end }` (block order from
 `<mark data-hl-id>` (splitting text nodes, so ranges spanning inline elements
 work), and unwraps on delete/clear. Because the marks preserve the block's text,
 the stored offsets stay valid across reloads. `store/useHighlightsStore.ts`
-persists `localStorage['connectedpapers.highlights.v1']` per reader key;
+persists `localStorage['citeduo.highlights.v1']` per reader key;
 `ReaderPage` re-applies stored highlights on iframe load and shows a floating bar
 for creating (colour + optional note) or editing (recolour/delete) them.
 
@@ -446,7 +448,7 @@ folds the translation under the pending annotation.
 
 `lib/searchHistory.ts` keeps a deduped, capped (20) recent-query list;
 `store/useSearchHistoryStore.ts` persists it to
-`localStorage['connectedpapers.searchHistory.v1']` with `record`/`remove`/`clear`.
+`localStorage['citeduo.searchHistory.v1']` with `record`/`remove`/`clear`.
 `SearchBar` records on submit and shows a filtered dropdown on focus, where
 clicking an item re-runs the search. Dropdown items use `onMouseDown`
 preventDefault so the input keeps focus through the click.
@@ -565,7 +567,7 @@ bursting into 429s.
 
 `lib/library.ts` is a pure `Library` (`favorites: string[]`, `collections`,
 `savedSearches`) with immutable operations; `store/useLibraryStore.ts` persists it
-to `localStorage['connectedpapers.library.v1']`. `PaperList` shows a per-row star
+to `localStorage['citeduo.library.v1']`. `PaperList` shows a per-row star
 plus "仅看收藏" and a collection filter; `DetailsPanel` has a favorite toggle and
 an "加入集合" select (with 新建); `SearchBar` shows saved searches in its dropdown
 with a 保存当前 action. Collections store paper ids (same key convention as the
@@ -593,7 +595,9 @@ own before/after.
 ### 29. Public deployment gate
 
 `config.server.accessToken` (env `ACCESS_TOKEN`) turns on a single-token gate for
-**all** requests when set (off by default, so local use is unchanged). `auth.ts`
+**all** requests when set (off by default, so local use is unchanged). The lone
+exception is the reader's internal `/api/paper/session/*` endpoints, which
+authenticate with an `x-internal-token` header (`INTERNAL_TOKEN`) instead. `auth.ts`
 extracts the token from `Authorization: Bearer`, `x-access-token`, the `cp_token`
 cookie, or `?token=`, comparing it constant-time (`safeEqual`); a valid `?token=`
 returns a 302 that sets an HttpOnly cookie (Secure behind TLS) and strips the
@@ -648,10 +652,11 @@ Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
 
 ## Known limitations & future work
 
-- **No global citation graph persistence.** Citations are only stored for edges
-  encountered while crawling a specific root; there is no repository-wide graph to
-  query offline. A future version could persist all fetched edges and run global
-  analytics.
+- **No repository-wide graph, only repository-wide edges.** Every build persists the
+  edges it encounters to `paper_relations` (§20) and later graphs reuse them, but the
+  stored set only covers what past crawls happened to touch — there is no single graph
+  artifact to load offline, so no global analytics over the corpus. A future version
+  could materialise one.
 - **Rendering is WebGL/canvas, not SVG.** The graph is drawn by `react-force-graph`
   (`ForceGraph2D` canvas for the default view, `ForceGraph3D` three.js loaded lazily
   for the 3D toggle), which stays interactive well past the configured caps
@@ -664,13 +669,33 @@ Schema in `server/schema.sql`; all tables `if not exists`, timestamps default to
   `react-force-graph` created a cross-chunk init order where `React.forwardRef`
   was undefined at run time (blank page). `chunkSizeWarningLimit` is raised to
   1400 for the intentionally lazy `three` chunk.
-- **No authentication.** Acceptable while loopback-only; if the server is ever
-  exposed beyond `127.0.0.1`, add auth and request limits.
+- **Auth is opt-in and shared, not per-user.** `ACCESS_TOKEN` is unset by default, so
+  the API is open until it is set — fine on loopback, but it must be set (with TLS
+  terminated upstream) before exposing the server further. The gate and the per-IP
+  limiter already exist (§29); what is missing is per-user identity, tenancy, and
+  token rotation — the cookie lasts 30 days and changing the variable is the only way
+  to invalidate it.
 - **Single-process job queue.** Jobs are in-process and persisted only as rows; a
   `running` job is resumed at boot but there is no concurrency control or worker
   pool.
-- **Upstream rate limits.** Semantic Scholar throttling can truncate a crawl
-  (partial graph) or fail a job; retries and batch delays mitigate but do not
-  eliminate this.
+- **Upstream rate limits.** The shared Semantic Scholar pool answers a large share
+  of requests with `429`, so spacing and retries mitigate but do not eliminate
+  throttling: a crawl can come back truncated, and an interactive `/api/connect`
+  can fall back to stored relations. Three changes keep the interactive path
+  usable (~15 s → ~1 s on a warm database, measured): the citing side is fetched
+  as a capped list per paper instead of riding along in every batch response
+  (that used to return up to 1000 rows / ~200 KB per paper for the 25 the caller
+  keeps), learned edges are persisted in one transaction instead of ~4500
+  auto-commits, and retry backoff is short enough that giving up and answering
+  from local knowledge beats sleeping through the user's attention span.
+  `CONNECT_TRACE=1` prints per-phase timings. The crawl in `graph.ts` still
+  writes row by row and would benefit from the same transaction treatment.
+- **Paper text is served according to its access terms, not unconditionally.**
+  arXiv's terms of use forbid storing and serving e-print content from your own
+  servers except "for your own personal use, or for research purposes", and the
+  Atom API does not expose a licence. `PAPER_CONTENT_MODE` (`auto` / `full` /
+  `off`) decides whether the reader may cache and serve full text; `auto` enables
+  it only on a loopback instance. Serving permissively licensed papers on a public
+  instance would need the licence link from each paper's `/abs/<id>` page.
 - **Cache invalidation is coarse.** `graphVersion` invalidates all networks at
   once; per-parameter TTL tuning is not exposed to the client.

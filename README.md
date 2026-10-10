@@ -1,8 +1,8 @@
-# Academic Paper Explorer
+# CiteDuo
 
 **Search papers, map their citation networks, and find out how any two papers are actually connected.**
 
-[![CI](https://github.com/benbenlijie/connectedpapers/actions/workflows/ci.yml/badge.svg)](https://github.com/benbenlijie/connectedpapers/actions/workflows/ci.yml)
+[![CI](https://github.com/benbenlijie/citeduo/actions/workflows/ci.yml/badge.svg)](https://github.com/benbenlijie/citeduo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Bun-1.3%2B-black?logo=bun)](https://bun.sh)
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react)](https://react.dev)
@@ -18,11 +18,11 @@ Self-hosted and local-first: one Bun process, one SQLite file, no account, no cl
 
 ## Why another paper explorer?
 
-Tools like Connected Papers show you the neighbourhood of **one** paper. That answers "what is around this paper?" — but not the question you have when two papers are already in front of you: **"how are these two related?"**
+Most citation-graph tools show you the neighbourhood of **one** paper. That answers "what is around this paper?" — but not the question you have when two papers are already in front of you: **"how are these two related?"**
 
-Academic Paper Explorer is built around that second question, and around owning your own data.
+CiteDuo is built around that second question, and around owning your own data.
 
-| | Connected Papers & similar | Academic Paper Explorer |
+| | Typical citation-graph tool | CiteDuo |
 | --- | --- | --- |
 | Neighbourhood graph | ✅ | ✅ |
 | "How are these two papers connected?" | ❌ | ✅ an explained path, hop by hop, with alternatives |
@@ -38,7 +38,7 @@ Pick any two papers and the app searches for the chain that links them, then exp
 ![Two-paper relation analysis](docs/images/two-paper-connection.png)
 
 - **An answer, not just a graph.** "Both are cited by *Uni-AdaFocus*, so they are usually discussed together" — that is the whole point.
-- **Paths are ranked by evidence.** Direct reference (1.0) › citation (0.95) › bibliographic coupling (0.8) › related work (0.6) › embedding similarity (0.45). Single-hop answers are labelled by their edge type; multi-hop ones as co-citation, coupling, or a chain.
+- **Paths are ranked by evidence.** Direct reference (1.0) › citation (0.95) › bibliographic coupling (0.8) › related work (0.6) › embedding similarity (0.45). A one-hop answer only counts as a direct citation when the hop really is one: a single coupling edge is labelled coupling, and a symmetric `related`/`semantic` edge is a similarity bridge rather than a made-up citation. Longer routes are labelled by shape — coupling, co-citation, citation path or similarity bridge.
 - **Alternatives are shown**, so you can tell a robust connection from a coincidental one.
 - **Signals alongside the path**: shared references, shared citers, embedding similarity, shared fields, shared authors.
 - **Four tiers, cheapest first**: fetch the two endpoints best-effort → walk relations already stored locally → a budgeted live crawl → an embedding bridge as a last resort. Ask for a local-only answer when you want it instantly and offline.
@@ -86,8 +86,8 @@ Two papers side by side, each with its own citation graph, sharing the filters a
 Requires **[Bun](https://bun.sh) ≥ 1.3** and **pnpm 9**.
 
 ```bash
-git clone https://github.com/benbenlijie/connectedpapers.git
-cd connectedpapers
+git clone https://github.com/benbenlijie/citeduo.git
+cd citeduo
 bash scripts/setup.sh      # installs both dependency trees, creates data/, copies server/.env
 bun run build:web          # build the frontend
 bun run server             # http://127.0.0.1:8787
@@ -118,7 +118,7 @@ flowchart LR
 Everything is one process: the Bun server serves the built frontend, the JSON API, and the SQLite database. Upstream responses are persisted, so graphs, relation edges and paper text get faster the more you use it — and a local-only relation answer needs no network at all.
 
 ```
-connectedpapers/
+citeduo/
 ├── academic-paper-explorer/   # React frontend (src/, components/, graph/, store/)
 ├── server/                    # Bun backend: routes, upstream clients, SQLite, graph search
 │   ├── pathfind.ts            # pure path search + ranking + explanation
@@ -147,6 +147,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the long version.
 | `CONNECT_MAX_EXPANSIONS` | `6` | Live S2 batch fetches allowed per relation search. |
 | `CONNECT_MAX_MS` | `25000` | Wall-clock budget for one relation search. |
 | `CONNECT_LOCAL_ONLY` | off | `1` = answer only from stored relations, never fetch. |
+| `PAPER_CONTENT_MODE` | `auto` | `full` / `off` / `auto`; `auto` means full text only on a loopback instance, and abstracts plus an arXiv link anywhere else. |
+| `ARXIV_API_MIN_INTERVAL_MS` | `3000` | arXiv's API terms ask for at most one request every three seconds. |
+| `ARXIV_CONTENT_MIN_INTERVAL_MS` | `1000` | Floor between arXiv paper-page fetches. Raise to `15000` for a literal reading of `robots.txt`. |
+| `ARXIV_CONTENT_MAX_PER_HOUR` | `60` | Circuit breaker on paper-page fetches per hour. |
+
+The complete list, including the crawl and translation knobs, is in [`server/.env.example`](server/.env.example).
+
+**Reader and arXiv usage** — the in-app reader can show a paper's full text, but arXiv's terms of use only allow storing and serving e-print content "for your own personal use, or for research purposes" ([tou.html](https://info.arxiv.org/help/api/tou.html)). `PAPER_CONTENT_MODE` therefore defaults to `auto`: `full` on a loopback-only instance, `off` anywhere else. With `off` the reader returns the abstract, the metadata and a link to the paper's arXiv page, and writes nothing to disk. A public demo should leave it at `off`; permissive licences could later be detected per paper and served individually.
 
 **LLM / translation provider** — an ordered fallback list; `kind: "browser"` needs no key and runs entirely in the visitor's browser:
 
@@ -187,8 +195,8 @@ Without an `openai` provider or with opencode unavailable, `/api/ai/*` returns `
 ## Development
 
 ```bash
-bun run test:server                        # backend (214 tests)
-pnpm --dir academic-paper-explorer test    # frontend (408 tests)
+bun run test:server                        # backend (220 tests)
+pnpm --dir academic-paper-explorer test    # frontend (412 tests)
 bun run typecheck:server
 pnpm --dir academic-paper-explorer typecheck
 pnpm --dir academic-paper-explorer lint
@@ -209,7 +217,11 @@ CI runs exactly these on every push and pull request. See [CONTRIBUTING.md](CONT
 - [ ] Full-text search over locally cached paper text.
 - [ ] Postgres backend for multi-user deployments.
 
-Ideas and bug reports are welcome in [issues](https://github.com/benbenlijie/connectedpapers/issues).
+Ideas and bug reports are welcome in [issues](https://github.com/benbenlijie/citeduo/issues).
+
+## Related work
+
+This is not the first tool in this space, and it does not try to replace the good ones. [Connected Papers](https://www.connectedpapers.com/), [Litmaps](https://www.litmaps.com/), [ResearchRabbit](https://www.researchrabbit.ai/) and [Inciteful](https://inciteful.xyz/) all do citation-neighbourhood exploration well. CiteDuo deliberately differs in three ways: it answers for a **pair** of papers with a ranked, explained path rather than only drawing a neighbourhood; it runs entirely on your own machine instead of as an account-based web service; and its assistant has to retrieve the paper text before it answers.
 
 ## Contributing
 
