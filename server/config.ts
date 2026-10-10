@@ -107,16 +107,6 @@ export const config = {
     /** Circuit breaker: stop fetching content after this many pages in an hour. */
     contentMaxPerHour: num(Bun.env.ARXIV_CONTENT_MAX_PER_HOUR, 60),
     contentMode: resolvePaperContentMode(Bun.env.PAPER_CONTENT_MODE, env.hostname),
-    /**
-     * How many abstracts a withholding instance holds in memory.
-     *
-     * Abstracts are CC0 metadata, so this is a cache rather than a store: it only
-     * saves a withholding instance from re-asking arXiv on every reader view.
-     * Each entry is small, but the count is a memory ceiling, so it belongs to
-     * the operator like every other arXiv knob. `0` turns the memo off and every
-     * view goes back to the arXiv API.
-     */
-    abstractMemoMax: num(Bun.env.ABSTRACT_MEMO_MAX, 500),
   },
   ai: {
     enabled: (Bun.env.OPENCODE_ENABLED ?? '1') !== '0',
