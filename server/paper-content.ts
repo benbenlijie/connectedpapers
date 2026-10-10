@@ -234,17 +234,34 @@ async function extractFromPdf(arxivId: string, fetchImpl: typeof fetch): Promise
  * Abstracts are CC0 metadata, so holding them in memory is fine, and it keeps a
  * withholding instance from re-asking arXiv on every reader page view. Small and
  * bounded on purpose: this is a cache, not a store.
+ *
+ * The ceiling comes from `ABSTRACT_MEMO_MAX` and is read per call, not captured
+ * once at module load, so an operator changing the env var does not need a
+ * restart and the eviction path stays testable.
  */
-const ABSTRACT_MEMO_MAX = 500
 const abstractMemo = new Map<string, PaperContent>()
 
+/** Number of abstracts this instance keeps; `0` disables the memo entirely. */
+export function abstractMemoMax(): number {
+  return Math.max(0, Math.floor(config.arxiv.abstractMemoMax))
+}
+
 function memoizeAbstract(content: PaperContent): PaperContent {
-  if (abstractMemo.size >= ABSTRACT_MEMO_MAX) {
+  const max = abstractMemoMax()
+  // A Map keeps insertion order, so the first key is the oldest entry: evicting
+  // it turns this into an LRU once the cap is reached.
+  while (max > 0 && abstractMemo.size >= max) {
     const oldest = abstractMemo.keys().next().value
-    if (oldest !== undefined) abstractMemo.delete(oldest)
+    if (oldest === undefined) break
+    abstractMemo.delete(oldest)
   }
-  abstractMemo.set(content.arxivId, content)
+  if (max > 0) abstractMemo.set(content.arxivId, content)
   return content
+}
+
+/** Test seam: drop every memoized abstract so cases cannot leak into each other. */
+export function clearAbstractMemo(): void {
+  abstractMemo.clear()
 }
 
 /**

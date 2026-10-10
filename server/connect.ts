@@ -73,11 +73,21 @@ export function loadLocalEdges(dbIn: Database = defaultDb): PathEdge[] {
   return out
 }
 
+/** Ids have no numeric order, so compare them the only stable way there is. */
+const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
 /**
  * Order a paper's reference list so works shared with the other endpoint come
  * first (most cited first). Breadth-first search keeps adjacency insertion
  * order, so this makes the *most significant* shared ancestor the one the
  * coupling path is drawn through instead of an arbitrary one.
+ *
+ * Ties on `citationCount` are broken by paper id. Without that, two works with
+ * the same citation count keep whatever order the upstream payload happened to
+ * arrive in, so the "most significant shared ancestor" could differ between
+ * runs on identical input. The id is the one key that is both stable across
+ * runs and unique per candidate, which makes the ranking a pure function of the
+ * candidate set.
  */
 export function orderReferences<T extends { paperId: string; citationCount?: number }>(
   refs: readonly T[],
@@ -87,13 +97,22 @@ export function orderReferences<T extends { paperId: string; citationCount?: num
   const priority: T[] = []
   const rest: T[] = []
   for (const r of refs) (shared.has(r.paperId) ? priority : rest).push(r)
-  const byCitations = (a: T, b: T) => (b.citationCount ?? 0) - (a.citationCount ?? 0)
-  priority.sort(byCitations)
-  rest.sort(byCitations)
+  const byCitationsThenId = (a: T, b: T) =>
+    (b.citationCount ?? 0) - (a.citationCount ?? 0) || byId(a.paperId, b.paperId)
+  priority.sort(byCitationsThenId)
+  rest.sort(byCitationsThenId)
   return [...priority, ...rest].slice(0, limit)
 }
 
-/** Next batch of papers to expand: not yet seen, most cited first. */
+/**
+ * Next batch of papers to expand: not yet seen, most cited first.
+ *
+ * Citation-count ties are broken by paper id, for the same reason as
+ * `orderReferences`: the frontier arrives in the order the upstream payloads
+ * were merged, so ranking on `citationCount` alone would let that incidental
+ * order decide which papers get expanded, and two runs over the same data could
+ * crawl different graphs.
+ */
 export function pickFrontier(
   candidates: readonly { paperId: string; citationCount?: number }[],
   seen: ReadonlySet<string>,
@@ -101,7 +120,9 @@ export function pickFrontier(
 ): string[] {
   const out: string[] = []
   const taken = new Set<string>()
-  const ranked = [...candidates].sort((a, b) => (b.citationCount ?? 0) - (a.citationCount ?? 0))
+  const ranked = [...candidates].sort(
+    (a, b) => (b.citationCount ?? 0) - (a.citationCount ?? 0) || byId(a.paperId, b.paperId),
+  )
   for (const c of ranked) {
     if (seen.has(c.paperId) || taken.has(c.paperId)) continue
     taken.add(c.paperId)

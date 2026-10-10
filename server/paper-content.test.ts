@@ -1,8 +1,10 @@
-import { test, expect, beforeEach } from 'bun:test'
+import { test, expect, describe, beforeEach } from 'bun:test'
 import { openDb } from './db'
 import {
   absUrl,
+  abstractMemoMax,
   ar5ivUrl,
+  clearAbstractMemo,
   extractSections,
   getCachedContent,
   htmlUrl,
@@ -14,7 +16,10 @@ import {
 import { pdfFixtureResponse } from './test-fixtures'
 
 let db: ReturnType<typeof openDb>
-beforeEach(() => { db = openDb(':memory:') })
+beforeEach(() => {
+  db = openDb(':memory:')
+  clearAbstractMemo()
+})
 
 const HTML = `<!doctype html><html><head><title>Attention Is All You Need</title></head>
 <body>
@@ -210,4 +215,98 @@ test("'off' mode hides full text already on disk but still serves abstracts", ()
     db,
   )
   expect(getCachedContent('2401.00023', db, 'off')?.source).toBe('abstract')
+})
+
+describe('abstract memo cap (ABSTRACT_MEMO_MAX)', () => {
+  /** Run `fn` with `ABSTRACT_MEMO_MAX` set, restoring the previous value after. */
+  function withMemoMax(value: string | undefined, fn: () => void | Promise<void>) {
+    const previous = process.env.ABSTRACT_MEMO_MAX
+    if (value === undefined) delete process.env.ABSTRACT_MEMO_MAX
+    else process.env.ABSTRACT_MEMO_MAX = value
+    return Promise.resolve(fn()).finally(() => {
+      if (previous === undefined) delete process.env.ABSTRACT_MEMO_MAX
+      else process.env.ABSTRACT_MEMO_MAX = previous
+    })
+  }
+
+  /** A fetch stub that never serves content, so 'off' mode stays on the abstract path. */
+  const noContentFetch = (async () => {
+    throw new Error('content must not be fetched')
+  }) as unknown as typeof fetch
+
+  /** arXiv stand-in counting one call per paper id, so cache hits are visible. */
+  function countingFallback() {
+    const asked: string[] = []
+    return {
+      asked,
+      fallback: async (id: string) => {
+        asked.push(id)
+        return { title: `T-${id}`, abstract: `A-${id}` }
+      },
+    }
+  }
+
+  test('defaults to 500 and clamps junk to a non-negative integer', async () => {
+    await withMemoMax(undefined, () => expect(abstractMemoMax()).toBe(500))
+    await withMemoMax('nonsense', () => expect(abstractMemoMax()).toBe(500))
+    await withMemoMax('-3', () => expect(abstractMemoMax()).toBe(0))
+    await withMemoMax('12.7', () => expect(abstractMemoMax()).toBe(12))
+    await withMemoMax('  8  ', () => expect(abstractMemoMax()).toBe(8))
+  })
+
+  test('the memo holds at most ABSTRACT_MEMO_MAX abstracts, evicting the oldest', async () => {
+    const { asked, fallback } = countingFallback()
+    await withMemoMax('2', async () => {
+      for (const id of ['a', 'b', 'c']) {
+        await loadPaperContent(`2401.0003${id.length}`, noContentFetch, db, fallback, 168, false, 'off')
+      }
+      // Only the two newest survive; 'a' was evicted when 'c' arrived.
+      const { asked: asked2, fallback: fb2 } = countingFallback()
+      await loadPaperContent('2401.00030', noContentFetch, db, fb2, 168, false, 'off')
+      await loadPaperContent('2401.00031', noContentFetch, db, fb2, 168, false, 'off')
+      await loadPaperContent('2401.00032', noContentFetch, db, fb2, 168, false, 'off')
+      expect(asked2).toEqual(['2401.00030'])
+    })
+    expect(asked).toHaveLength(3)
+  })
+
+  test('eviction is oldest-first, not newest-first', async () => {
+    await withMemoMax('2', async () => {
+      const { asked, fallback } = countingFallback()
+      for (const id of ['1', '2', '3']) {
+        await loadPaperContent(`2401.0004${id}`, noContentFetch, db, fallback, 168, false, 'off')
+      }
+      // '1' and '2' are gone; re-reading them goes back to the arXiv API, while
+      // the two most recent are still served from memory.
+      const { asked: again, fallback: fb2 } = countingFallback()
+      await loadPaperContent('2401.00041', noContentFetch, db, fb2, 168, false, 'off')
+      await loadPaperContent('2401.00042', noContentFetch, db, fb2, 168, false, 'off')
+      await loadPaperContent('2401.00043', noContentFetch, db, fb2, 168, false, 'off')
+      expect(again).toEqual(['2401.00041', '2401.00042'])
+    })
+  })
+
+  test('a cap of 0 disables the memo, so every view re-asks arXiv', async () => {
+    await withMemoMax('0', async () => {
+      const { asked, fallback } = countingFallback()
+      await loadPaperContent('2401.00050', noContentFetch, db, fallback, 168, false, 'off')
+      await loadPaperContent('2401.00050', noContentFetch, db, fallback, 168, false, 'off')
+      await loadPaperContent('2401.00050', noContentFetch, db, fallback, 168, false, 'off')
+      expect(asked).toEqual(['2401.00050', '2401.00050', '2401.00050'])
+    })
+  })
+
+  test('a larger cap keeps more abstracts', async () => {
+    await withMemoMax('3', async () => {
+      const { asked, fallback } = countingFallback()
+      for (const id of ['1', '2', '3']) {
+        await loadPaperContent(`2401.0006${id}`, noContentFetch, db, fallback, 168, false, 'off')
+      }
+      const { asked: again, fallback: fb2 } = countingFallback()
+      for (const id of ['1', '2', '3']) {
+        await loadPaperContent(`2401.0006${id}`, noContentFetch, db, fb2, 168, false, 'off')
+      }
+      expect(again).toEqual([])
+    })
+  })
 })

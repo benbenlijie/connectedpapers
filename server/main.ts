@@ -19,6 +19,7 @@ import { createOpencodeClient, OpencodeManager } from './opencode'
 import { join } from 'node:path'
 import { cookieHeader, clientIpFrom, extractToken, safeEqual, withBasePath } from './auth'
 import { createRateLimiter } from './rateLimit'
+import { handleApiRequest } from './routes/api'
 
 const WEB_DIST = new URL('../academic-paper-explorer/dist', import.meta.url).pathname
 
@@ -117,75 +118,8 @@ server = Bun.serve({
   // SSE (/api/ai/stream) is long-lived; the 10s default idle timeout
   // silently kills it mid-turn.
   idleTimeout: 120,
-  async fetch(req) {
-    const url = new URL(req.url)
-    const p = url.pathname
-    try {
-      if (req.method === 'OPTIONS') return new Response(null, { status: 204 })
-
-      if (ACCESS_TOKEN && !p.startsWith('/api/paper/session/')) {
-        const { token, fromQuery } = extractToken(req.headers, url)
-        if (fromQuery && token && safeEqual(token, ACCESS_TOKEN)) {
-          const clean = new URL(url)
-          clean.searchParams.delete('token')
-          const secure = url.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https'
-          return new Response(null, {
-            status: 302,
-            headers: {
-              Location: withBasePath(config.server.basePath, clean.pathname, clean.search),
-              'Set-Cookie': cookieHeader(ACCESS_TOKEN, secure),
-            },
-          })
-        }
-        if (!token || !safeEqual(token, ACCESS_TOKEN)) return unauthorized()
-      }
-
-      if (rateLimiter && p.startsWith('/api/') && !RATE_LIMIT_EXEMPT.some((prefix) => p.startsWith(prefix))) {
-        const ip = clientIpFrom(req.headers, config.server.trustProxy, safeRequestIp(req))
-        if (!rateLimiter(ip)) {
-          throw new ApiError('RATE_LIMITED', '请求过于频繁，请稍后重试', 429)
-        }
-      }
-
-      if (p.startsWith('/api/ai/') && !(await aiAvailable())) {
-        throw new ApiError('LLM_UNAVAILABLE', 'AI 服务不可用，请稍后重试', 503)
-      }
-
-      if (p === '/api/search' && req.method === 'POST') return await searchRoute(req)
-      if (p === '/api/details' && req.method === 'POST') return await detailsRoute(req)
-      if (p === '/api/network' && req.method === 'POST') return await networkRoute(req)
-      if (p === '/api/lineage' && req.method === 'POST') return await lineageRoute(req)
-      if (p === '/api/connect' && req.method === 'POST') return await connectRoute(req)
-      if (p === '/api/translate' && req.method === 'POST') return await translateRoute(req)
-      if (p === '/api/ai/session' && req.method === 'POST') return await aiSessionRoute(req, db, opencodeClient)
-      if (p === '/api/ai/chat' && req.method === 'POST') return await aiChatRoute(req, opencodeClient, db)
-      if (p === '/api/ai/history' && req.method === 'GET') return await aiHistoryRoute(req, opencodeClient)
-      if (p === '/api/ai/abort' && req.method === 'POST') {
-        const sessionId = new URL(req.url).searchParams.get('sessionId') ?? ''
-        return await aiAbortRoute(opencodeClient, sessionId)
-      }
-      if (p === '/api/ai/stream' && req.method === 'GET') {
-        const sessionId = new URL(req.url).searchParams.get('sessionId') ?? ''
-        return await aiStreamRoute(req, opencodeClient, sessionId)
-      }
-      if (p === '/api/llm/status' && req.method === 'GET') return await llmStatusRoute()
-      if (p.startsWith('/api/jobs/') && req.method === 'GET') return await jobRoute(req, p.split('/').pop()!)
-      if (p.startsWith('/api/neighbors/') && req.method === 'GET') return await neighborsRoute(p.split('/').pop()!)
-      if (p.startsWith('/api/reader/') && req.method === 'GET') {
-        return await readerRoute(req, decodeURIComponent(p.slice('/api/reader/'.length)), db)
-      }
-      if (p.startsWith('/api/paper/session/') && p.endsWith('/search') && req.method === 'GET') {
-        return await paperSearchRoute(req, db, INTERNAL_TOKEN)
-      }
-      const sectionMatch = p.match(/^\/api\/paper\/session\/([^/]+)\/section\/(\d+)$/)
-      if (sectionMatch && req.method === 'GET') {
-        return await paperSectionRoute(req, sectionMatch[1], Number(sectionMatch[2]), db, INTERNAL_TOKEN)
-      }
-      if (p.startsWith('/api/')) throw new ApiError('VALIDATION_FAILED', `未知接口: ${p}`, 404)
-      return await serveStatic(p)
-    } catch (e) {
-      return handleError(e)
-    }
+  fetch(req) {
+    return handleApiRequest(req, { db, opencodeClient, rateLimiter, accessToken: ACCESS_TOKEN })
   },
 })
 

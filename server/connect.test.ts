@@ -140,6 +140,36 @@ describe('orderReferences', () => {
     const refs = Array.from({ length: 10 }, (_, i) => ({ paperId: `p${i}`, citationCount: i }))
     expect(orderReferences(refs, new Set(), 3)).toHaveLength(3)
   })
+
+  test('breaks citation-count ties by paper id, so input order cannot change the ranking', () => {
+    const refs = [
+      { paperId: 'c', citationCount: 7 },
+      { paperId: 'a', citationCount: 7 },
+      { paperId: 'b', citationCount: 7 },
+    ]
+    const forward = orderReferences(refs, new Set(), 10).map((r) => r.paperId)
+    expect(forward).toEqual(['a', 'b', 'c'])
+    // Same candidates, same tie, only the arrival order differs.
+    expect(orderReferences([...refs].reverse(), new Set(), 10).map((r) => r.paperId)).toEqual(forward)
+  })
+
+  test('breaks ties inside the shared-first partition too', () => {
+    const refs = [
+      { paperId: 'shared-z', citationCount: 4 },
+      { paperId: 'shared-a', citationCount: 4 },
+      { paperId: 'other-z', citationCount: 4 },
+      { paperId: 'other-a', citationCount: 4 },
+    ]
+    const shared = new Set(['shared-a', 'shared-z'])
+    const forward = orderReferences(refs, shared, 10).map((r) => r.paperId)
+    expect(forward).toEqual(['shared-a', 'shared-z', 'other-a', 'other-z'])
+    expect(orderReferences([...refs].reverse(), shared, 10).map((r) => r.paperId)).toEqual(forward)
+  })
+
+  test('treats a missing citation count as zero and still orders deterministically', () => {
+    const refs = [{ paperId: 'b' }, { paperId: 'a' }, { paperId: 'c', citationCount: undefined }]
+    expect(orderReferences(refs, new Set(), 10).map((r) => r.paperId)).toEqual(['a', 'b', 'c'])
+  })
 })
 
 describe('pickFrontier', () => {
@@ -152,6 +182,16 @@ describe('pickFrontier', () => {
       { paperId: 'c', citationCount: 1 },
     ]
     expect(pickFrontier(candidates, new Set(['seen']), 2)).toEqual(['b', 'a'])
+  })
+
+  test('breaks citation-count ties by paper id, so input order cannot change the batch', () => {
+    const candidates = [
+      { paperId: 'z', citationCount: 7 },
+      { paperId: 'm', citationCount: 7 },
+      { paperId: 'a', citationCount: 7 },
+    ]
+    expect(pickFrontier(candidates, new Set(), 2)).toEqual(['a', 'm'])
+    expect(pickFrontier([...candidates].reverse(), new Set(), 2)).toEqual(['a', 'm'])
   })
 })
 
