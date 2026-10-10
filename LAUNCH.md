@@ -1,7 +1,7 @@
 # CiteDuo 发布 runbook
 
 这是给你自己看的操作手册，不是宣传稿。详细依据（每条规则都带原始链接）在
-[`channels.md`](channels.md)（渠道与规则）和 [`distribution.md`](distribution.md)（awesome 列表与投稿）。
+[`channels.md`](docs/launch/channels.md)（渠道与规则）和 [`distribution.md`](docs/launch/distribution.md)（awesome 列表与投稿）。
 
 ---
 
@@ -85,7 +85,7 @@ awesome 列表（`distribution.md`）从发布后 1-2 周再开始，每周最�
 ## 5. 发布后 48 小时
 
 1. issue 当天回，哪怕是「我看到了，周末看」。
-2. 把 [`good-first-issues.md`](good-first-issues.md) 里的条目开成 issue（命令已备好，改名后再跑）。
+2. 把 [`good-first-issues.md`](docs/launch/good-first-issues.md) 里的条目开成 issue（命令已备好，改名后再跑）。
 3. 盯 `CONNECT_TRACE=1` 的日志和上游 429：如果 demo 被打到限流，先降 `RATE_LIMIT_PER_MIN`，再考虑关掉 `live` 扩展。
 4. 把「第一次真实用户的误解」记下来——那是下一版 README 的第一段。
 
